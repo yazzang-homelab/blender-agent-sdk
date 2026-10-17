@@ -129,9 +129,12 @@ Python inside Blender:
 - embedded scripts in `.blend` files: Blender starts with `--disable-autoexec`, every file load
   (`open_file`, `restore`, `wm.open_mainfile`, …) runs with `use_scripts=False`, and an explicit
   `use_scripts=True` is refused;
-- Freestyle style modules in Python-script mode, which the renderer runs from text blocks regardless of
-  auto-exec: while any is enabled, renders and operator calls are refused until the agent switches
-  `freestyle_settings.mode` to `'EDITOR'` or turns `render.use_freestyle` off.
+- Freestyle, which runs Python whenever it renders regardless of auto-exec: style-module text blocks in
+  script mode, and in editor mode an expression built from view-layer and line-set names that escapes only
+  quotes. While any scene has `render.use_freestyle` on, operator calls, renders and property writes
+  (except turning it off) are refused;
+  files opened by operators load without their own UI (`load_ui=False`; `load_ui=True` is refused), so a
+  file cannot bring a viewport or sequencer preview that renders on redraw.
 
 This closes code execution *inside the Blender process*. It is **not** a filesystem sandbox: ordinary
 operators can still read and write files the user can reach (`save`, `wm.save_as_mainfile`, image and
@@ -140,7 +143,8 @@ agents in a container or VM with only the files they need.
 
 The guarantee covers what an agent can reach through tool calls. Constructor arguments are the caller's:
 `extra_args` (e.g. `--enable-autoexec`, `--python-expr`) and `factory_startup=False` (user add-ons and
-startup file) are passed to Blender unchecked.
+startup file) are passed to Blender unchecked, and in GUI sessions a `blend_file` given at launch
+opens with its own UI. Open untrusted files with `open_file` instead.
 
 ## Why not MCP?
 

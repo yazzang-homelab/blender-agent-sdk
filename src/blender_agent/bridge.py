@@ -116,6 +116,8 @@ def _exec_refusal(idname, op, rna, params):
         return f"{idname} with use_scripts=True would run scripts embedded in the file"
     if params.get("use_trusted"):  # wm.previews_batch_*: a child Blender with --enable-autoexec
         return f"{idname} with use_trusted=True would run scripts embedded in the files"
+    if params.get("load_ui"):
+        return f"{idname} with load_ui=True would load the file's UI, whose redraws can render (Freestyle runs Python)"
     return None
 
 
@@ -245,35 +247,33 @@ def _resolve_operator(idname):
     return op, op.get_rna_type()
 
 
-def _freestyle_scripts():
-    """Enabled Freestyle style modules in Python-script mode: the renderer runs their text blocks
-    (source/blender/freestyle), whatever --disable-autoexec and use_scripts say."""
-    return [f"{scene.name}/{layer.name}/{module.script.name}"
-            for scene in bpy.data.scenes if scene.render.use_freestyle
-            for layer in scene.view_layers
-            if layer.use_freestyle and layer.freestyle_settings.mode == "SCRIPT"
-            for module in layer.freestyle_settings.modules if module.use and module.script is not None]
-
-
-def _refuse_freestyle_scripts():
-    scripts = _freestyle_scripts()
-    if scripts:
-        raise BridgeError(f"refused without allow_exec: rendering would run Freestyle style module scripts "
-                          f"{scripts}; set freestyle_settings.mode to 'EDITOR' or render.use_freestyle to False")
+def _refuse_freestyle():
+    """Freestyle runs Python whenever it renders, whatever --disable-autoexec and use_scripts say:
+    style-module text blocks in SCRIPT mode (BPY_run_text), and in EDITOR mode an expression built
+    from view-layer and line-set names that only escapes quotes (FRS_freestyle.cpp:165-188).
+    So without allow_exec, nothing may run while any scene has it enabled; the agent can still
+    turn it off with set_property (linked scenes cannot be edited: open another file instead)."""
+    if ALLOW_EXEC:
+        return
+    scenes = sorted(scene.name for scene in bpy.data.scenes if scene.render.use_freestyle)
+    if scenes:
+        raise BridgeError(f"refused without allow_exec: Freestyle is enabled in scenes {scenes} and runs Python "
+                          "when rendering; set render.use_freestyle to False on them first")
 
 
 def call_operator(idname, params=None, area_type=None, execution_context="EXEC_DEFAULT"):
     op, rna = _resolve_operator(idname)
     params = dict(params or {})
+    _refuse_freestyle()  # any operator may render (render.render, sequencer scene strips, bake, ...)
     if not ALLOW_EXEC:
-        _refuse_freestyle_scripts()  # any operator may render (render.render, sequencer scene strips, ...)
         reason = _exec_refusal(idname, op, rna, params)
         if reason:
             raise BridgeError(f"refused without allow_exec: {reason}")
-        for flag in ("use_scripts", "use_trusted"):
+        for flag in ("use_scripts", "use_trusted", "load_ui"):
             if rna.properties.get(flag) is not None:
                 # use_scripts: do not fall back to the auto-exec preference. use_trusted: GUI
                 # sessions re-use an operator's last properties, so pin the default explicitly.
+                # load_ui: a file's own UI could redraw a sequencer preview that renders.
                 params[flag] = False
     override = _area_override(area_type or "VIEW_3D")
     with bpy.context.temp_override(**override):
@@ -321,6 +321,10 @@ def get_property(collection, name, path):
 
 
 def set_property(collection, name, path, value):
+    # The Freestyle opt-out must stay possible; anything else could, in GUI sessions, make a redraw
+    # render (e.g. a sequencer preview of a scene strip).
+    if not (collection == "scenes" and path == "render.use_freestyle" and not value):
+        _refuse_freestyle()
     block = _resolve_datablock(collection, name)
     owner_path, attr = _split_path(path)
     try:
@@ -363,8 +367,7 @@ def _render_engine():
 
 
 def _render_png(width, height):
-    if not ALLOW_EXEC:
-        _refuse_freestyle_scripts()
+    _refuse_freestyle()
     scene = bpy.context.scene
     render = scene.render
     saved = {

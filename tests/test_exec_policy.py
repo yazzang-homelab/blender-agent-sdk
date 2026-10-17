@@ -39,6 +39,7 @@ def _plant_registered_text(session, marker, blend):
         "node.add_repeat_zone", "node.add_closure_zone", "node.add_foreach_geometry_element_zone",
         "node.add_empty_group", "node.swap_empty_group", "node.add_typed_bundle", "node.swap_typed_bundle")],
     ("wm.open_mainfile", {"filepath": "/tmp/x.blend", "use_scripts": True}),
+    ("wm.open_mainfile", {"filepath": "/tmp/x.blend", "load_ui": True}),
 ])
 def test_code_running_operators_are_refused(session, idname, params):
     with pytest.raises(RemoteError, match="refused without allow_exec"):
@@ -132,37 +133,52 @@ def test_animation_path_update_cannot_eval_planted_data_path(blender_bin, tmp_pa
                 assert not marker.exists()
 
 
-_FREESTYLE_SCENE = """
-scene = bpy.context.scene
+_FREESTYLE_SCRIPT_MODE = """
 text = bpy.data.texts.new("style.py")
 text.write(f"open({MARKER!r}, 'w').write('ran')")
-scene.render.use_freestyle = True
-scene.render.resolution_x, scene.render.resolution_y = 32, 24
 settings = bpy.context.view_layer.freestyle_settings
 settings.mode = "SCRIPT"
 bpy.ops.scene.freestyle_module_add()
 settings.modules[-1].script = text
-bpy.ops.wm.save_as_mainfile(filepath=BLEND)
+"""
+# EDITOR mode evaluates "__import__('parameter_editor').process('<layer>', '<line set>')" with only
+# quotes escaped (FRS_freestyle.cpp:165-188), so a backslash in a name ends the string literal
+# (the payload itself must avoid single quotes, which do get escaped).
+# Names are limited to 63 bytes, so the injected expression runs a text block's contents.
+_FREESTYLE_EDITOR_MODE = """
+bpy.data.texts.new("p").write(f"open({MARKER!r}, 'w').write('ran')")
+settings = bpy.context.view_layer.freestyle_settings
+settings.mode = "EDITOR"
+settings.linesets[0].name = "\\\\', exec(__import__(\\"bpy\\").data.texts[\\"p\\"].as_string()))#"
 """
 
 
-def test_freestyle_style_module_scripts_never_render(blender_bin, exec_session, tmp_path):
+@pytest.mark.parametrize("mode", ["SCRIPT", "EDITOR"])
+def test_freestyle_never_renders_without_exec(blender_bin, exec_session, tmp_path, mode):
     marker, blend = tmp_path / "marker", tmp_path / "freestyle.blend"
-    exec_session.exec_python(f"MARKER, BLEND = {str(marker)!r}, {str(blend)!r}\n" + _FREESTYLE_SCENE)
+    setup = _FREESTYLE_SCRIPT_MODE if mode == "SCRIPT" else _FREESTYLE_EDITOR_MODE
+    exec_session.exec_python(
+        f"MARKER = {str(marker)!r}\n{setup}\n"
+        "scene = bpy.context.scene\n"
+        "scene.render.use_freestyle = True\n"
+        "scene.render.engine = 'CYCLES'\n"
+        "scene.cycles.samples = 1\n"
+        "scene.render.resolution_x, scene.render.resolution_y = 32, 24\n"
+        f"bpy.ops.wm.save_as_mainfile(filepath={str(blend)!r})")
     with BlenderSession(blender_bin, blend_file=blend) as bl:
         for attempt in (lambda: bl.screenshot(32, 24),
                         lambda: bl.call_operator("render.render"),
-                        lambda: bl.call_operator("mesh.primitive_cube_add")):
-            with pytest.raises(RemoteError, match="Freestyle style module scripts"):
+                        lambda: bl.call_operator("mesh.primitive_cube_add"),
+                        lambda: bl.set_property("screens", "Layout", "areas[0].ui_type", "SEQUENCE_EDITOR")):
+            with pytest.raises(RemoteError, match="Freestyle is enabled in scenes"):
                 attempt()
-        bl.set_property("scenes", "Scene", "view_layers[0].freestyle_settings.mode", "EDITOR")
-        assert bl.screenshot(32, 24)[0].startswith(b"\x89PNG")  # the agent can opt out and continue
+        bl.set_property("scenes", "Scene", "render.use_freestyle", False)  # the opt-out stays allowed
+        bl.call_operator("render.render")
     assert not marker.exists()
-    # Positive control: the same file does run the script when it renders.
-    exec_session.open_file(blend)
-    exec_session.exec_python("bpy.context.scene.render.engine = 'CYCLES'\n"
-                             "bpy.context.scene.cycles.samples = 1\n"
-                             "bpy.ops.render.render()")
+    # Positive control: the same file runs the payload when it renders with Freestyle on, even
+    # though it was opened with use_scripts=False.
+    exec_session.call_operator("wm.open_mainfile", {"filepath": str(blend), "use_scripts": False})
+    exec_session.exec_python("bpy.ops.render.render()")
     assert marker.read_text() == "ran"
 
 
