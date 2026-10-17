@@ -119,7 +119,22 @@ in CI, and its tools drop into any function-calling loop. Prior art for comparis
 
 ## Reverse engineering
 
-RE_SUMMARY
+The SDK's shape comes from taking the stripped 167 MB Blender 5.2.2 binary apart with REA + Ghidra (full
+auto-analysis: 301,393 procedures, 70 min). The results were cross-checked against the v5.2.2 source and a full runtime
+RNA dump. Highlights from [`docs/re/`](docs/re/README.md):
+
+- CPython is statically linked (`.PyRuntime` section). `bpy`, `gpu` and `bmesh` live in an internal `_inittab` and are
+  never exported, so the only bridge that needs no install is a `--python` script inside Blender's own interpreter.
+- The `-b` handler just sets `G.background` and mutes audio. The window manager survives, but there is no event loop
+  and no GPU context, so the bridge owns the main thread under `-b` and screenshots come from a render instead of
+  `GPUOffScreen`.
+- `bpy_op_fn_call_impl` (decompiled) polls, converts kwargs to RNA, releases the GIL and calls
+  `WM_operator_call_py(..., is_undo)`. That `is_undo` flag is why GUI sessions pass it, and why `-b` sessions use
+  `.blend` checkpoints.
+- The binary holds 2,247 operator idnames from about 2,135 static `WM_operatortype_append` call sites. At runtime there
+  are 2,498 operators. Every difference is accounted for: Python operators, add-on operators, dead and
+  commented-out registrations, keymap strings, and one linker tail-merge. The SDK therefore searches the live
+  registry instead of a static list.
 
 ## Development
 

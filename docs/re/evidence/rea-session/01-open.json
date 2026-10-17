@@ -1,0 +1,18 @@
+{
+ "request": {
+  "tool": "open_binary",
+  "arguments": {
+   "path": "/home/yazzang/.local/opt/blender-5.2.2-linux-x64/blender",
+   "provider_id": "ghidra"
+  }
+ },
+ "elapsed_s": 0.2,
+ "is_error": false,
+ "evidence": {
+  "path": "/home/yazzang/.local/opt/blender-5.2.2-linux-x64/blender",
+  "format": "elf",
+  "kind": "executable",
+  "sha256": "bafec183e960819c76fe213c000cdb2284c53a87ef6791812f8728b51f07145b",
+  "architecture": "x86_64"
+ }
+}

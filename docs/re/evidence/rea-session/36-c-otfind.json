@@ -1,0 +1,88 @@
+{
+ "request": {
+  "tool": "procedure_pseudo_code",
+  "arguments": {
+   "procedure": "0x16ac580"
+  }
+ },
+ "elapsed_s": 0.0,
+ "is_error": false,
+ "evidence": {
+  "evidence_id": "ev_fc0a4fe87e8474601213cf682d95d749e7289ee6f62defa39f4d571c292c2479",
+  "subject": {
+   "name": "blender",
+   "digest": {
+    "sha256": "bafec183e960819c76fe213c000cdb2284c53a87ef6791812f8728b51f07145b"
+   },
+   "local_path": "/home/yazzang/.local/opt/blender-5.2.2-linux-x64/blender",
+   "format": "elf",
+   "architecture": "x86_64"
+  },
+  "provider": {
+   "id": "ghidra",
+   "name": "Ghidra",
+   "version": "12.1.4"
+  },
+  "analysis_profile": {
+   "provider": {
+    "id": "ghidra",
+    "name": "Ghidra",
+    "version": "12.1.4"
+   },
+   "parameters": {
+    "target_kind": "executable",
+    "target_format": "elf",
+    "architecture": "x86_64",
+    "available_architectures": [
+     "x86_64"
+    ],
+    "import_mode": "ephemeral-source-immutable",
+    "annotation_policy": "atomic-function-entry-metadata-v1",
+    "load_image_observations": "source-mappings-entry-context-v2",
+    "function_body_evidence": "complete-inclusive-ranges-v1",
+    "function_references": "complete-body-and-entry-reference-manager-v2",
+    "call_relationship_coverage": "function-body-call-coverage-v5",
+    "function_dossier_coverage": "observed-facets-and-call-relationships-v1",
+    "string_inventory_evidence": "defined-data-coverage-v1",
+    "location_resolution": "explicit-address-exact-entry-symbol-first-v3",
+    "procedure_file_offset_resolution": "address-first-unique-target-source-mapping-v2",
+    "instruction_flow_evidence": "decoded-return-pcode-v1",
+    "instruction_references": "exact-address-incoming-v1",
+    "function_boundary_observations": "ghidra-function-boundary-limitations-v3",
+    "no_return_repair": "returning-imports-decoded-return-v2",
+    "process_launch": "inspected-jvm-launch-support-v1",
+    "jump_table_evidence": "typed-case-default-blocks-v1",
+    "decompiler_jump_loads": true,
+    "loader": "auto-from-header",
+    "language_id": "auto-from-header",
+    "compiler_spec_id": "auto-default",
+    "analyzer_preset": "ghidra-default"
+   },
+   "digest": "9c7f6b24be69294e61da046e4583e3856cb9e40433b149c1bf8bb534d2fe03ef"
+  },
+  "predicate_type": "rea.analysis",
+  "operation": "procedure_pseudo_code",
+  "parameters": {
+   "procedure": "0x16ac580"
+  },
+  "raw_result": {
+   "value": "\nlong FUN_016ac580(char *param_1,char param_2)\n\n{\n  ulong uVar1;\n  long lVar2;\n  char *__s;\n  long lVar3;\n  int iVar4;\n  long lVar5;\n  size_t __n;\n  byte *pbVar6;\n  byte *pbVar7;\n  size_t sVar8;\n  ulong uVar9;\n  ulong uVar10;\n  byte local_78 [72];\n  \n  if (*param_1 == '\\0') {\n    if (param_2 == '\\0') {\n      lVar5 = *(long *)(PTR_DAT_0a939560 + 8);\n      if (lVar5 == 0) {\n        FUN_0160b160(PTR_DAT_0a939560);\n        lVar5 = *(long *)(PTR_DAT_0a939560 + 8);\n      }\n      if (2 < *(int *)(lVar5 + 0x50)) {\n        FUN_0160a890(lVar5,3,\"source/blender/windowmanager/intern/wm_operator_type.cc:95\",\n                     \"WM_operatortype_find\",\"Search for empty operator\");\n      }\n    }\n    return 0;\n  }\n  uVar9 = 0x1505;\n  FUN_016b0e00(local_78,param_1);\n  lVar5 = FUN_016ac450();\n  __n = strlen((char *)local_78);\n  pbVar6 = local_78;\n  if (__n != 0) {\n    do {\n      pbVar7 = pbVar6 + 1;\n      uVar9 = (ulong)*pbVar6 + uVar9 * 0x21;\n      pbVar6 = pbVar7;\n    } while (local_78 + __n != pbVar7);\n  }\n  uVar1 = *(ulong *)(lVar5 + 0x18);\n  lVar2 = *(long *)(lVar5 + 0x20);\n  lVar5 = *(long *)(lVar5 + 0x90);\n  uVar10 = uVar9;\n  do {\n    lVar3 = *(long *)(lVar2 + (uVar1 & uVar10) * 8);\n    if (lVar3 < 0) {\n      if (lVar3 == -1) {\n        if (param_2 != '\\0') {\n          return 0;\n        }\n        lVar5 = *(long *)(PTR_DAT_0a939560 + 8);\n        if (lVar5 == 0) {\n          FUN_0160b160(PTR_DAT_0a939560);\n          lVar5 = *(long *)(PTR_DAT_0a939560 + 8);\n        }\n        if (*(int *)(lVar5 + 0x50) < 3) {\n          return 0;\n        }\n        FUN_0160a890(lVar5,3,\"source/blender/windowmanager/intern/wm_operator_type.cc:90\",\n                     \"WM_operatortype_find\",\"Search for unknown operator \\'%s\\', \\'%s\\'\",local_78,\n                     param_1);\n        return 0;\n      }\n    }\n    else {\n      lVar3 = *(long *)(lVar5 + lVar3 * 8);\n      __s = *(char **)(lVar3 + 8);\n      if (__s == (char *)0x0) {\n        if (__n == 0) {\n          return lVar3;\n        }\n      }\n      else {\n        sVar8 = strlen(__s);\n        if (__n == sVar8) {\n          if (__n == 0) {\n            return lVar3;\n          }\n          iVar4 = memcmp(local_78,__s,__n);\n          if (iVar4 == 0) {\n            return lVar3;\n          }\n        }\n      }\n    }\n    uVar9 = uVar9 >> 5;\n    uVar10 = uVar10 * 5 + 1 + uVar9;\n  } while( true );\n}\n\n",
+   "limitations": []
+  },
+  "normalized_result": "\nlong FUN_016ac580(char *param_1,char param_2)\n\n{\n  ulong uVar1;\n  long lVar2;\n  char *__s;\n  long lVar3;\n  int iVar4;\n  long lVar5;\n  size_t __n;\n  byte *pbVar6;\n  byte *pbVar7;\n  size_t sVar8;\n  ulong uVar9;\n  ulong uVar10;\n  byte local_78 [72];\n  \n  if (*param_1 == '\\0') {\n    if (param_2 == '\\0') {\n      lVar5 = *(long *)(PTR_DAT_0a939560 + 8);\n      if (lVar5 == 0) {\n        FUN_0160b160(PTR_DAT_0a939560);\n        lVar5 = *(long *)(PTR_DAT_0a939560 + 8);\n      }\n      if (2 < *(int *)(lVar5 + 0x50)) {\n        FUN_0160a890(lVar5,3,\"source/blender/windowmanager/intern/wm_operator_type.cc:95\",\n                     \"WM_operatortype_find\",\"Search for empty operator\");\n      }\n    }\n    return 0;\n  }\n  uVar9 = 0x1505;\n  FUN_016b0e00(local_78,param_1);\n  lVar5 = FUN_016ac450();\n  __n = strlen((char *)local_78);\n  pbVar6 = local_78;\n  if (__n != 0) {\n    do {\n      pbVar7 = pbVar6 + 1;\n      uVar9 = (ulong)*pbVar6 + uVar9 * 0x21;\n      pbVar6 = pbVar7;\n    } while (local_78 + __n != pbVar7);\n  }\n  uVar1 = *(ulong *)(lVar5 + 0x18);\n  lVar2 = *(long *)(lVar5 + 0x20);\n  lVar5 = *(long *)(lVar5 + 0x90);\n  uVar10 = uVar9;\n  do {\n    lVar3 = *(long *)(lVar2 + (uVar1 & uVar10) * 8);\n    if (lVar3 < 0) {\n      if (lVar3 == -1) {\n        if (param_2 != '\\0') {\n          return 0;\n        }\n        lVar5 = *(long *)(PTR_DAT_0a939560 + 8);\n        if (lVar5 == 0) {\n          FUN_0160b160(PTR_DAT_0a939560);\n          lVar5 = *(long *)(PTR_DAT_0a939560 + 8);\n        }\n        if (*(int *)(lVar5 + 0x50) < 3) {\n          return 0;\n        }\n        FUN_0160a890(lVar5,3,\"source/blender/windowmanager/intern/wm_operator_type.cc:90\",\n                     \"WM_operatortype_find\",\"Search for unknown operator \\'%s\\', \\'%s\\'\",local_78,\n                     param_1);\n        return 0;\n      }\n    }\n    else {\n      lVar3 = *(long *)(lVar5 + lVar3 * 8);\n      __s = *(char **)(lVar3 + 8);\n      if (__s == (char *)0x0) {\n        if (__n == 0) {\n          return lVar3;\n        }\n      }\n      else {\n        sVar8 = strlen(__s);\n        if (__n == sVar8) {\n          if (__n == 0) {\n            return lVar3;\n          }\n          iVar4 = memcmp(local_78,__s,__n);\n          if (iVar4 == 0) {\n            return lVar3;\n          }\n        }\n      }\n    }\n    uVar9 = uVar9 >> 5;\n    uVar10 = uVar10 * 5 + 1 + uVar9;\n  } while( true );\n}\n\n",
+  "confidence": "observed",
+  "authority": "shipped-artifact",
+  "environment": null,
+  "limitations": [
+   "The session serves operations only after Ghidra reports default auto-analysis complete; incomplete analysis does not expose partial results.",
+   "The imported Program and temporary project are ephemeral and deleted on close. Annotation operations edit session database metadata; original executable bytes are never written.",
+   "Cancelling an active Ghidra request terminates its ephemeral database and discards session annotations. The selected target remains open; the next provider query imports the original artifact again.",
+   "Default-space addresses use lowercase 0x-prefixed hexadecimal; other address spaces use <percent-encoded-space>:0x<hex>.",
+   "Pseudocode is Ghidra decompiler output, not original source and not text-equivalent to Hopper output.",
+   "External functions and functions without an analyzable body return null; other decompiler failures remain explicit."
+  ],
+  "relationship_coverage": null,
+  "locations": [],
+  "evidence_links": []
+ }
+}

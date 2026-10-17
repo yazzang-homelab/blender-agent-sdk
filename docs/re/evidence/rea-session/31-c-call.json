@@ -1,0 +1,91 @@
+{
+ "request": {
+  "tool": "procedure_pseudo_code",
+  "arguments": {
+   "procedure": "0x2383cd0"
+  }
+ },
+ "elapsed_s": 0.1,
+ "is_error": false,
+ "evidence": {
+  "evidence_id": "ev_d7c5b79d2ff1f3ca44282b405ca6dfe05519ef6f47dcc5d5523c89693d4f62cb",
+  "subject": {
+   "name": "blender",
+   "digest": {
+    "sha256": "bafec183e960819c76fe213c000cdb2284c53a87ef6791812f8728b51f07145b"
+   },
+   "local_path": "/home/yazzang/.local/opt/blender-5.2.2-linux-x64/blender",
+   "format": "elf",
+   "architecture": "x86_64"
+  },
+  "provider": {
+   "id": "ghidra",
+   "name": "Ghidra",
+   "version": "12.1.4"
+  },
+  "analysis_profile": {
+   "provider": {
+    "id": "ghidra",
+    "name": "Ghidra",
+    "version": "12.1.4"
+   },
+   "parameters": {
+    "target_kind": "executable",
+    "target_format": "elf",
+    "architecture": "x86_64",
+    "available_architectures": [
+     "x86_64"
+    ],
+    "import_mode": "ephemeral-source-immutable",
+    "annotation_policy": "atomic-function-entry-metadata-v1",
+    "load_image_observations": "source-mappings-entry-context-v2",
+    "function_body_evidence": "complete-inclusive-ranges-v1",
+    "function_references": "complete-body-and-entry-reference-manager-v2",
+    "call_relationship_coverage": "function-body-call-coverage-v5",
+    "function_dossier_coverage": "observed-facets-and-call-relationships-v1",
+    "string_inventory_evidence": "defined-data-coverage-v1",
+    "location_resolution": "explicit-address-exact-entry-symbol-first-v3",
+    "procedure_file_offset_resolution": "address-first-unique-target-source-mapping-v2",
+    "instruction_flow_evidence": "decoded-return-pcode-v1",
+    "instruction_references": "exact-address-incoming-v1",
+    "function_boundary_observations": "ghidra-function-boundary-limitations-v3",
+    "no_return_repair": "returning-imports-decoded-return-v2",
+    "process_launch": "inspected-jvm-launch-support-v1",
+    "jump_table_evidence": "typed-case-default-blocks-v1",
+    "decompiler_jump_loads": true,
+    "loader": "auto-from-header",
+    "language_id": "auto-from-header",
+    "compiler_spec_id": "auto-default",
+    "analyzer_preset": "ghidra-default"
+   },
+   "digest": "9c7f6b24be69294e61da046e4583e3856cb9e40433b149c1bf8bb534d2fe03ef"
+  },
+  "predicate_type": "rea.analysis",
+  "operation": "procedure_pseudo_code",
+  "parameters": {
+   "procedure": "0x2383cd0"
+  },
+  "raw_result": {
+   "value": "\nundefined8 FUN_02383cd0(long param_1,undefined8 param_2,long param_3)\n\n{\n  uint uVar1;\n  char cVar2;\n  short sVar3;\n  uint uVar4;\n  int iVar5;\n  long lVar6;\n  long lVar7;\n  long lVar8;\n  long lVar9;\n  long lVar10;\n  undefined1 (*pauVar11) [16];\n  undefined8 uVar12;\n  undefined1 uVar13;\n  undefined1 local_95;\n  uint local_94;\n  long local_90;\n  undefined1 local_88 [24];\n  undefined1 *local_70;\n  undefined1 local_58 [40];\n  \n  lVar6 = FUN_02358f40();\n  if (lVar6 == 0) {\n    PyErr_SetString(PyExc_RuntimeError,\"Context is None, cannot call an operator\");\n    return 0;\n  }\n  if ((param_3 != 0) && (cVar2 = FUN_03482830(param_3), cVar2 == '\\0')) {\n    PyErr_SetString(PyExc_TypeError,\"keywords must be strings\");\n    return 0;\n  }\n  lVar7 = FUN_007aa6b0(lVar6);\n  cVar2 = FUN_023837a0(param_2,&local_90,&local_95);\n  if (cVar2 == '\\0') {\n    return 0;\n  }\n  FUN_02383bb0(lVar6);\n  lVar8 = FUN_02358f40();\n  if (lVar8 == 0) {\n    PyErr_SetString(PyExc_RuntimeError,\"Context is None, cannot poll any operators\");\n    return 0;\n  }\n  param_1 = param_1 + 0x10;\n  lVar9 = FUN_016ac580(param_1,1);\n  if (lVar9 == 0) {\n    FUN_016b0d60(local_88,param_1);\n    PyErr_Format(PyExc_AttributeError,\"Calling operator \\\"bpy.ops.%s\\\" error, could not be found\",\n                 local_88);\n    return 0;\n  }\n  cVar2 = FUN_0236ba90();\n  if (cVar2 == '\\0') {\n    FUN_016b0d60(local_88,param_1);\n    PyErr_Format(PyExc_RuntimeError,\n                 \"Calling operator \\\"bpy.ops.%s\\\" error, cannot modify blend data in this state (drawing/rendering)\"\n                 ,local_88);\n    return 0;\n  }\n  if (local_90 == 0) {\n    uVar13 = 6;\n  }\n  else {\n    local_94 = 6;\n    cVar2 = FUN_01d0ea90(&DAT_0a5f6e40,local_90,&local_94);\n    uVar13 = (char)local_94;\n    if (cVar2 == '\\0') {\n      lVar6 = FUN_0347e990(&DAT_0a5f6e40);\n      FUN_016b0d60(local_88,param_1);\n      PyErr_Format(PyExc_TypeError,\n                   \"Calling operator \\\"bpy.ops.%s\\\" error, expected a string enum in (%s)\",local_88,\n                   lVar6);\n      if (lVar6 == 0) {\n        return 0;\n      }\n      goto LAB_02383e31;\n    }\n  }\n  cVar2 = FUN_0168b750(lVar8,lVar9,uVar13);\n  if (cVar2 != '\\0') {\n    FUN_016b0f30(local_88,lVar9);\n                    /* try { // try from 02383f24 to 02384020 has its CatchHandler @ 023841a1 */\n    FUN_016b1100(local_88,0);\n    if (((param_3 == 0) || (lVar10 = PyDict_Size(param_3), lVar10 == 0)) ||\n       (iVar5 = FUN_023778a0(local_88,param_3,0,\"Converting py args to operator properties:\"),\n       iVar5 == 0)) {\n      pauVar11 = (undefined1 (*) [16])(*(code *)PTR_FUN_0a938758)(0x30,8,\"wmOperatorReportList\",0);\n      *pauVar11 = (undefined1  [16])0x0;\n      pauVar11[1] = (undefined1  [16])0x0;\n      pauVar11[2] = (undefined1  [16])0x0;\n      FUN_00a08590(pauVar11,0x1a);\n      uVar12 = PyEval_SaveThread();\n      uVar4 = FUN_0168caa0(lVar8,lVar9,uVar13,local_88,pauVar11,local_95);\n      PyEval_RestoreThread(uVar12);\n      sVar3 = FUN_0237f960(pauVar11,PyExc_RuntimeError,0);\n      iVar5 = (int)sVar3;\n      if (*(long *)*pauVar11 != 0) {\n        uVar1 = *(uint *)pauVar11[1];\n        cVar2 = FUN_0160af30();\n        FUN_00a08880(pauVar11,(-(uint)(cVar2 == '\\0') & 0xfffffff1) + 0x10);\n        FUN_0237f9e0(pauVar11,0);\n        FUN_00a08880(pauVar11,uVar1 & 0xffff);\n      }\n      FUN_00a08600(pauVar11);\n      if ((*(uint *)(pauVar11[1] + 8) & 4) == 0) {\n                    /* try { // try from 023840a3 to 023840d5 has its CatchHandler @ 023841a1 */\n        FUN_00a086c0(pauVar11);\n        (*(code *)PTR_FUN_0a938798)(pauVar11,1);\n      }\n      else {\n        *(uint *)(pauVar11[1] + 8) = *(uint *)(pauVar11[1] + 8) & 0xfffffff7;\n      }\n    }\n    else {\n      uVar4 = 2;\n    }\n    FUN_016b1510(local_88);\n    if (local_70 != local_58) {\n      FUN_0160b9f0();\n    }\n    if (iVar5 == -1) {\n      return 0;\n    }\n    thunk_FUN_0236c1c0();\n    if (((uVar4 & 4) != 0) && (lVar8 = FUN_007aa6b0(lVar6), lVar7 == lVar8)) {\n      FUN_02383bb0(lVar6);\n    }\n    uVar12 = FUN_0347eda0(&DAT_0a600fc0,uVar4);\n    return uVar12;\n  }\n  local_94 = local_94 & 0xffffff00;\n  lVar6 = FUN_007aaa90(lVar8,&local_94);\n  if (lVar6 == 0) {\n    FUN_016b0d60(local_88,param_1);\n    PyErr_Format(PyExc_RuntimeError,\"Operator bpy.ops.%.200s.poll() %.200s\",local_88,\n                 \"failed, context is incorrect\");\n    FUN_007aa9e0(lVar8);\n    return 0;\n  }\n  FUN_016b0d60(local_88,param_1);\n  PyErr_Format(PyExc_RuntimeError,\"Operator bpy.ops.%.200s.poll() %.200s\",local_88,lVar6);\n  FUN_007aa9e0(lVar8);\n  if ((char)local_94 == '\\0') {\n    return 0;\n  }\nLAB_02383e31:\n  (*(code *)PTR_FUN_0a938798)(lVar6,1);\n  return 0;\n}\n\n",
+   "limitations": [
+    "Ghidra Listing reports a terminal call at 0x238406a to 0x347eda0 FUN_0347eda0 (external=false, thunk=false, hasNoReturn=false); fallthrough is excluded by Ghidra's flow model. The reason for the terminal flow is not established by this observation."
+   ]
+  },
+  "normalized_result": "\nundefined8 FUN_02383cd0(long param_1,undefined8 param_2,long param_3)\n\n{\n  uint uVar1;\n  char cVar2;\n  short sVar3;\n  uint uVar4;\n  int iVar5;\n  long lVar6;\n  long lVar7;\n  long lVar8;\n  long lVar9;\n  long lVar10;\n  undefined1 (*pauVar11) [16];\n  undefined8 uVar12;\n  undefined1 uVar13;\n  undefined1 local_95;\n  uint local_94;\n  long local_90;\n  undefined1 local_88 [24];\n  undefined1 *local_70;\n  undefined1 local_58 [40];\n  \n  lVar6 = FUN_02358f40();\n  if (lVar6 == 0) {\n    PyErr_SetString(PyExc_RuntimeError,\"Context is None, cannot call an operator\");\n    return 0;\n  }\n  if ((param_3 != 0) && (cVar2 = FUN_03482830(param_3), cVar2 == '\\0')) {\n    PyErr_SetString(PyExc_TypeError,\"keywords must be strings\");\n    return 0;\n  }\n  lVar7 = FUN_007aa6b0(lVar6);\n  cVar2 = FUN_023837a0(param_2,&local_90,&local_95);\n  if (cVar2 == '\\0') {\n    return 0;\n  }\n  FUN_02383bb0(lVar6);\n  lVar8 = FUN_02358f40();\n  if (lVar8 == 0) {\n    PyErr_SetString(PyExc_RuntimeError,\"Context is None, cannot poll any operators\");\n    return 0;\n  }\n  param_1 = param_1 + 0x10;\n  lVar9 = FUN_016ac580(param_1,1);\n  if (lVar9 == 0) {\n    FUN_016b0d60(local_88,param_1);\n    PyErr_Format(PyExc_AttributeError,\"Calling operator \\\"bpy.ops.%s\\\" error, could not be found\",\n                 local_88);\n    return 0;\n  }\n  cVar2 = FUN_0236ba90();\n  if (cVar2 == '\\0') {\n    FUN_016b0d60(local_88,param_1);\n    PyErr_Format(PyExc_RuntimeError,\n                 \"Calling operator \\\"bpy.ops.%s\\\" error, cannot modify blend data in this state (drawing/rendering)\"\n                 ,local_88);\n    return 0;\n  }\n  if (local_90 == 0) {\n    uVar13 = 6;\n  }\n  else {\n    local_94 = 6;\n    cVar2 = FUN_01d0ea90(&DAT_0a5f6e40,local_90,&local_94);\n    uVar13 = (char)local_94;\n    if (cVar2 == '\\0') {\n      lVar6 = FUN_0347e990(&DAT_0a5f6e40);\n      FUN_016b0d60(local_88,param_1);\n      PyErr_Format(PyExc_TypeError,\n                   \"Calling operator \\\"bpy.ops.%s\\\" error, expected a string enum in (%s)\",local_88,\n                   lVar6);\n      if (lVar6 == 0) {\n        return 0;\n      }\n      goto LAB_02383e31;\n    }\n  }\n  cVar2 = FUN_0168b750(lVar8,lVar9,uVar13);\n  if (cVar2 != '\\0') {\n    FUN_016b0f30(local_88,lVar9);\n                    /* try { // try from 02383f24 to 02384020 has its CatchHandler @ 023841a1 */\n    FUN_016b1100(local_88,0);\n    if (((param_3 == 0) || (lVar10 = PyDict_Size(param_3), lVar10 == 0)) ||\n       (iVar5 = FUN_023778a0(local_88,param_3,0,\"Converting py args to operator properties:\"),\n       iVar5 == 0)) {\n      pauVar11 = (undefined1 (*) [16])(*(code *)PTR_FUN_0a938758)(0x30,8,\"wmOperatorReportList\",0);\n      *pauVar11 = (undefined1  [16])0x0;\n      pauVar11[1] = (undefined1  [16])0x0;\n      pauVar11[2] = (undefined1  [16])0x0;\n      FUN_00a08590(pauVar11,0x1a);\n      uVar12 = PyEval_SaveThread();\n      uVar4 = FUN_0168caa0(lVar8,lVar9,uVar13,local_88,pauVar11,local_95);\n      PyEval_RestoreThread(uVar12);\n      sVar3 = FUN_0237f960(pauVar11,PyExc_RuntimeError,0);\n      iVar5 = (int)sVar3;\n      if (*(long *)*pauVar11 != 0) {\n        uVar1 = *(uint *)pauVar11[1];\n        cVar2 = FUN_0160af30();\n        FUN_00a08880(pauVar11,(-(uint)(cVar2 == '\\0') & 0xfffffff1) + 0x10);\n        FUN_0237f9e0(pauVar11,0);\n        FUN_00a08880(pauVar11,uVar1 & 0xffff);\n      }\n      FUN_00a08600(pauVar11);\n      if ((*(uint *)(pauVar11[1] + 8) & 4) == 0) {\n                    /* try { // try from 023840a3 to 023840d5 has its CatchHandler @ 023841a1 */\n        FUN_00a086c0(pauVar11);\n        (*(code *)PTR_FUN_0a938798)(pauVar11,1);\n      }\n      else {\n        *(uint *)(pauVar11[1] + 8) = *(uint *)(pauVar11[1] + 8) & 0xfffffff7;\n      }\n    }\n    else {\n      uVar4 = 2;\n    }\n    FUN_016b1510(local_88);\n    if (local_70 != local_58) {\n      FUN_0160b9f0();\n    }\n    if (iVar5 == -1) {\n      return 0;\n    }\n    thunk_FUN_0236c1c0();\n    if (((uVar4 & 4) != 0) && (lVar8 = FUN_007aa6b0(lVar6), lVar7 == lVar8)) {\n      FUN_02383bb0(lVar6);\n    }\n    uVar12 = FUN_0347eda0(&DAT_0a600fc0,uVar4);\n    return uVar12;\n  }\n  local_94 = local_94 & 0xffffff00;\n  lVar6 = FUN_007aaa90(lVar8,&local_94);\n  if (lVar6 == 0) {\n    FUN_016b0d60(local_88,param_1);\n    PyErr_Format(PyExc_RuntimeError,\"Operator bpy.ops.%.200s.poll() %.200s\",local_88,\n                 \"failed, context is incorrect\");\n    FUN_007aa9e0(lVar8);\n    return 0;\n  }\n  FUN_016b0d60(local_88,param_1);\n  PyErr_Format(PyExc_RuntimeError,\"Operator bpy.ops.%.200s.poll() %.200s\",local_88,lVar6);\n  FUN_007aa9e0(lVar8);\n  if ((char)local_94 == '\\0') {\n    return 0;\n  }\nLAB_02383e31:\n  (*(code *)PTR_FUN_0a938798)(lVar6,1);\n  return 0;\n}\n\n",
+  "confidence": "observed",
+  "authority": "shipped-artifact",
+  "environment": null,
+  "limitations": [
+   "The session serves operations only after Ghidra reports default auto-analysis complete; incomplete analysis does not expose partial results.",
+   "The imported Program and temporary project are ephemeral and deleted on close. Annotation operations edit session database metadata; original executable bytes are never written.",
+   "Cancelling an active Ghidra request terminates its ephemeral database and discards session annotations. The selected target remains open; the next provider query imports the original artifact again.",
+   "Default-space addresses use lowercase 0x-prefixed hexadecimal; other address spaces use <percent-encoded-space>:0x<hex>.",
+   "Pseudocode is Ghidra decompiler output, not original source and not text-equivalent to Hopper output.",
+   "External functions and functions without an analyzable body return null; other decompiler failures remain explicit.",
+   "Ghidra Listing reports a terminal call at 0x238406a to 0x347eda0 FUN_0347eda0 (external=false, thunk=false, hasNoReturn=false); fallthrough is excluded by Ghidra's flow model. The reason for the terminal flow is not established by this observation."
+  ],
+  "relationship_coverage": null,
+  "locations": [],
+  "evidence_links": []
+ }
+}

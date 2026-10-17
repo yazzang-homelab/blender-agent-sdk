@@ -1,0 +1,88 @@
+{
+ "request": {
+  "tool": "procedure_pseudo_code",
+  "arguments": {
+   "procedure": "0x78be50"
+  }
+ },
+ "elapsed_s": 0.0,
+ "is_error": false,
+ "evidence": {
+  "evidence_id": "ev_b6071389d3a4d08c31584e25f97e0d7656f75d87965ae40dc1f6f00f8baeb6e6",
+  "subject": {
+   "name": "blender",
+   "digest": {
+    "sha256": "bafec183e960819c76fe213c000cdb2284c53a87ef6791812f8728b51f07145b"
+   },
+   "local_path": "/home/yazzang/.local/opt/blender-5.2.2-linux-x64/blender",
+   "format": "elf",
+   "architecture": "x86_64"
+  },
+  "provider": {
+   "id": "ghidra",
+   "name": "Ghidra",
+   "version": "12.1.4"
+  },
+  "analysis_profile": {
+   "provider": {
+    "id": "ghidra",
+    "name": "Ghidra",
+    "version": "12.1.4"
+   },
+   "parameters": {
+    "target_kind": "executable",
+    "target_format": "elf",
+    "architecture": "x86_64",
+    "available_architectures": [
+     "x86_64"
+    ],
+    "import_mode": "ephemeral-source-immutable",
+    "annotation_policy": "atomic-function-entry-metadata-v1",
+    "load_image_observations": "source-mappings-entry-context-v2",
+    "function_body_evidence": "complete-inclusive-ranges-v1",
+    "function_references": "complete-body-and-entry-reference-manager-v2",
+    "call_relationship_coverage": "function-body-call-coverage-v5",
+    "function_dossier_coverage": "observed-facets-and-call-relationships-v1",
+    "string_inventory_evidence": "defined-data-coverage-v1",
+    "location_resolution": "explicit-address-exact-entry-symbol-first-v3",
+    "procedure_file_offset_resolution": "address-first-unique-target-source-mapping-v2",
+    "instruction_flow_evidence": "decoded-return-pcode-v1",
+    "instruction_references": "exact-address-incoming-v1",
+    "function_boundary_observations": "ghidra-function-boundary-limitations-v3",
+    "no_return_repair": "returning-imports-decoded-return-v2",
+    "process_launch": "inspected-jvm-launch-support-v1",
+    "jump_table_evidence": "typed-case-default-blocks-v1",
+    "decompiler_jump_loads": true,
+    "loader": "auto-from-header",
+    "language_id": "auto-from-header",
+    "compiler_spec_id": "auto-default",
+    "analyzer_preset": "ghidra-default"
+   },
+   "digest": "9c7f6b24be69294e61da046e4583e3856cb9e40433b149c1bf8bb534d2fe03ef"
+  },
+  "predicate_type": "rea.analysis",
+  "operation": "procedure_pseudo_code",
+  "parameters": {
+   "procedure": "0x78be50"
+  },
+  "raw_result": {
+   "value": "\n/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */\n\nundefined1  [16] FUN_0078be50(int param_1,long param_2)\n\n{\n  undefined1 auVar1 [16];\n  char cVar2;\n  ulong extraout_RDX;\n  undefined1 auVar3 [16];\n  ulong uStack_20;\n  uint local_14;\n  undefined8 local_10;\n  \n  if (1 < param_1) {\n    local_10 = 0;\n    uStack_20 = 0x78be80;\n    cVar2 = FUN_0078b740(*(undefined8 *)(param_2 + 8),0,0xff,&local_14,&local_10);\n    if (cVar2 == '\\0') {\n      fprintf(_stderr,\"\\nError: %s \\'%s %s\\', expected number in [%d..%d].\\n\",local_10,\n              \"--python-exit-code\",*(undefined8 *)(param_2 + 8),0,0xff);\n    }\n    else {\n      uStack_20 = (ulong)local_14;\n      DAT_0a901bd3 = (undefined1)local_14;\n    }\n    auVar3._8_8_ = uStack_20;\n    auVar3._0_8_ = 1;\n    return auVar3;\n  }\n  fprintf(_stderr,\"\\nError: you must specify an exit code number \\'%s\\'.\\n\",\"--python-exit-code\");\n  auVar1._8_8_ = 0;\n  auVar1._0_8_ = extraout_RDX;\n  return auVar1 << 0x40;\n}\n\n",
+   "limitations": []
+  },
+  "normalized_result": "\n/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */\n\nundefined1  [16] FUN_0078be50(int param_1,long param_2)\n\n{\n  undefined1 auVar1 [16];\n  char cVar2;\n  ulong extraout_RDX;\n  undefined1 auVar3 [16];\n  ulong uStack_20;\n  uint local_14;\n  undefined8 local_10;\n  \n  if (1 < param_1) {\n    local_10 = 0;\n    uStack_20 = 0x78be80;\n    cVar2 = FUN_0078b740(*(undefined8 *)(param_2 + 8),0,0xff,&local_14,&local_10);\n    if (cVar2 == '\\0') {\n      fprintf(_stderr,\"\\nError: %s \\'%s %s\\', expected number in [%d..%d].\\n\",local_10,\n              \"--python-exit-code\",*(undefined8 *)(param_2 + 8),0,0xff);\n    }\n    else {\n      uStack_20 = (ulong)local_14;\n      DAT_0a901bd3 = (undefined1)local_14;\n    }\n    auVar3._8_8_ = uStack_20;\n    auVar3._0_8_ = 1;\n    return auVar3;\n  }\n  fprintf(_stderr,\"\\nError: you must specify an exit code number \\'%s\\'.\\n\",\"--python-exit-code\");\n  auVar1._8_8_ = 0;\n  auVar1._0_8_ = extraout_RDX;\n  return auVar1 << 0x40;\n}\n\n",
+  "confidence": "observed",
+  "authority": "shipped-artifact",
+  "environment": null,
+  "limitations": [
+   "The session serves operations only after Ghidra reports default auto-analysis complete; incomplete analysis does not expose partial results.",
+   "The imported Program and temporary project are ephemeral and deleted on close. Annotation operations edit session database metadata; original executable bytes are never written.",
+   "Cancelling an active Ghidra request terminates its ephemeral database and discards session annotations. The selected target remains open; the next provider query imports the original artifact again.",
+   "Default-space addresses use lowercase 0x-prefixed hexadecimal; other address spaces use <percent-encoded-space>:0x<hex>.",
+   "Pseudocode is Ghidra decompiler output, not original source and not text-equivalent to Hopper output.",
+   "External functions and functions without an analyzable body return null; other decompiler failures remain explicit."
+  ],
+  "relationship_coverage": null,
+  "locations": [],
+  "evidence_links": []
+ }
+}
