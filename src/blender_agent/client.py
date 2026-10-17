@@ -30,6 +30,10 @@ class SessionLost(BlenderAgentError):
     """
 
 
+class RequestTooLarge(BlenderAgentError):
+    """A request exceeded the frame limit and was not sent. The session is unaffected."""
+
+
 class RemoteError(BlenderAgentError):
     """A request raised inside Blender. The bridge is still alive."""
 
@@ -212,7 +216,7 @@ class BlenderSession:
         try:
             frame = wire.encode_frame({"id": request_id, "method": method, "params": params})
         except wire.FrameTooLarge as exc:
-            raise BlenderAgentError(f"{method} request not sent: {exc}") from exc  # session unaffected
+            raise RequestTooLarge(f"{method} request not sent: {exc}") from exc
         self._sock.settimeout(timeout or self.timeout)
         try:
             self._sock.sendall(frame)

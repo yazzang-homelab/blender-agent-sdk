@@ -5,7 +5,7 @@ import time
 
 import pytest
 
-from blender_agent import BlenderAgentError, BlenderSession, RemoteError, SessionLost
+from blender_agent import BlenderSession, RemoteError, RequestTooLarge, SessionLost, dispatch
 
 
 def _started_with_checkpoint(blender_bin, **kwargs):
@@ -94,8 +94,11 @@ def test_oversized_response_is_a_remote_error(exec_session):
 
 
 def test_oversized_request_is_not_sent_and_session_survives(session):
-    with pytest.raises(BlenderAgentError, match="not sent"):
+    with pytest.raises(RequestTooLarge, match="not sent"):
         session.call("ping", junk="x" * (65 * 1024 * 1024))
+    assert session.ping()["pong"] is True
+    outcome = dispatch(session, "object_info", {"name": "x" * (65 * 1024 * 1024)})
+    assert outcome["ok"] is False and "not sent" in outcome["error"]
     assert session.ping()["pong"] is True
 
 

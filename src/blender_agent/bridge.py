@@ -79,6 +79,7 @@ _EXEC_OPERATORS = {
     "wm.path_open",           # launches an external program
     "wm.url_open",
     "image.external_edit",
+    "asset.open_containing_blend_file",  # starts another Blender with the user's auto-exec preference
 }
 # String parameters that Python operators pass to eval()/exec().
 _EVAL_PARAMS = {"data_path", "data_path_iter", "data_path_item", "eval_string", "list_path",
@@ -111,6 +112,8 @@ def _exec_refusal(idname, op, rna, params):
             return f"{idname} evaluates settings values as Python"
     if params.get("use_scripts"):
         return f"{idname} with use_scripts=True would run scripts embedded in the file"
+    if params.get("use_trusted"):  # wm.previews_batch_*: a child Blender with --enable-autoexec
+        return f"{idname} with use_trusted=True would run scripts embedded in the files"
     return None
 
 
@@ -243,8 +246,9 @@ def call_operator(idname, params=None, area_type=None, execution_context="EXEC_D
         reason = _exec_refusal(idname, op, rna, params)
         if reason:
             raise BridgeError(f"refused without allow_exec: {reason}")
-        if "use_scripts" in {p.identifier for p in rna.properties}:
-            params["use_scripts"] = False  # do not fall back to the auto-exec preference
+        for flag in ("use_scripts", "use_trusted"):
+            if rna.properties.get(flag) is not None:
+                params[flag] = False  # do not fall back to the auto-exec preference
     override = _area_override(area_type or "VIEW_3D")
     with bpy.context.temp_override(**override):
         if not op.poll():
@@ -382,7 +386,7 @@ def _render_png(width, height):
 
 
 def _viewport_png(width, height):
-    import gpu  # drawing needs a GPU context: the GUI's, or gpu.init() under -b
+    import gpu  # GUI sessions only: drawing needs the window's GPU context
     import numpy as np
 
     override = _area_override("VIEW_3D")
@@ -564,6 +568,18 @@ def _next_request(sock):
         return None, _error(None, "BadRequest", str(exc))
 
 
+def _serve_one(sock, request, rejected):
+    """Answer one request; True when the client asked to quit."""
+    if rejected is not None:
+        _send_response(sock, rejected)
+        return False
+    if isinstance(request, dict) and request.get("method") == "quit":
+        wire.send_frame(sock, {"id": request.get("id"), "ok": True, "result": {"quit": True}})
+        return True
+    _send_response(sock, handle(request))
+    return False
+
+
 def _connect():
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.connect(SOCKET_PATH)
@@ -579,13 +595,8 @@ def serve_background():
                 request, rejected = _next_request(sock)
             except wire.ConnectionClosed:
                 return
-            if rejected is not None:
-                _send_response(sock, rejected)
-            elif isinstance(request, dict) and request.get("method") == "quit":
-                wire.send_frame(sock, {"id": request.get("id"), "ok": True, "result": {"quit": True}})
+            if _serve_one(sock, request, rejected):
                 return
-            else:
-                _send_response(sock, handle(request))
     finally:
         sock.close()
 
@@ -619,14 +630,8 @@ def serve_gui():
             try:
                 if item is None:  # client gone: do not leave an orphaned Blender window
                     return shutdown()
-                request, rejected = item
-                if rejected is not None:
-                    _send_response(sock, rejected)
-                elif isinstance(request, dict) and request.get("method") == "quit":
-                    wire.send_frame(sock, {"id": request.get("id"), "ok": True, "result": {"quit": True}})
+                if _serve_one(sock, *item):
                     return shutdown()
-                else:
-                    _send_response(sock, handle(request))
             except OSError:
                 return shutdown()
 

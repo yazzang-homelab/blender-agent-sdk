@@ -83,8 +83,9 @@ python examples/agent_loop.py --policy anthropic "build a low-poly tree"
 
 Errors raised inside Blender come back as `RemoteError` (type, message, remote traceback) and the
 session keeps running; `dispatch()` turns them into `{"ok": false, "error": ...}` so the model can
-correct itself. A hung or crashed Blender raises `SessionLost` after the request timeout and the process
-is killed.
+correct itself. A request over the 64 MiB frame limit raises `RequestTooLarge` without being sent (the
+session is unaffected; `dispatch()` returns it as an error too). A hung or crashed Blender raises
+`SessionLost` after the request timeout and the process is killed.
 
 ## Background vs GUI sessions
 
@@ -119,7 +120,10 @@ Python inside Blender:
 - operators that run scripts or code: `script.*`, `console.*`, `text.run_script`, preset add/execute operators,
   add-on and extension management (`preferences.*`, `extensions.*`), external openers (`wm.url_open`,
   `wm.path_open`, `image.external_edit`), and any operator taking a Python-evaluated parameter
-  (`data_path`, `eval_string`, …, as in `wm.context_*`) or `node.add_node(settings=...)`;
+  (`data_path`, `eval_string`, …, as in `wm.context_*`) or a `settings` collection of `NodeSetting`
+  values (`node.add_node`, `node.swap_node` and the zone, group and bundle adders: 12 operators in 5.2.2);
+- operators that start another Blender which could run scripts: `asset.open_containing_blend_file`, and
+  `wm.previews_batch_generate`/`wm.previews_batch_clear` with `use_trusted=True` (forced to `False` otherwise);
 - embedded scripts in `.blend` files: Blender starts with `--disable-autoexec`, every file load
   (`open_file`, `restore`, `wm.open_mainfile`, …) runs with `use_scripts=False`, and an explicit
   `use_scripts=True` is refused.

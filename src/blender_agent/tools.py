@@ -8,7 +8,7 @@ executes a tool call against a :class:`~blender_agent.client.BlenderSession`.
 import base64
 import json
 
-from .client import RemoteError
+from .client import RemoteError, RequestTooLarge
 
 _STR = {"type": "string"}
 _INT = {"type": "integer"}
@@ -159,7 +159,7 @@ def dispatch(session, name, arguments):
             png, meta = session.screenshot(**arguments)
             return {"ok": True, "result": meta, "image_png": png}
         return {"ok": True, "result": session.request(name, arguments), "image_png": None}
-    except RemoteError as exc:
+    except (RemoteError, RequestTooLarge) as exc:
         return _failed(str(exc))
 
 

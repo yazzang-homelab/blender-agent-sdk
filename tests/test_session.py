@@ -62,11 +62,12 @@ def test_cycles_screenshot_leaves_scene_settings_untouched(blender_bin):
     with BlenderSession(blender_bin, env={"BLENDER_AGENT_RENDER_ENGINE": "CYCLES"}) as bl:
         bl.set_property("scenes", "Scene", "render.engine", "CYCLES")
         bl.set_property("scenes", "Scene", "cycles.samples", 77)
+        bl.set_property("scenes", "Scene", "cycles.device", "GPU")  # the bridge renders on the CPU
         bl.set_property("scenes", "Scene", "render.resolution_x", 1234)
         png, meta = bl.screenshot(64, 48)
         assert png.startswith(PNG_SIGNATURE) and meta["engine"] == "CYCLES"
         assert bl.get_property("scenes", "Scene", "cycles.samples") == 77
-        assert bl.get_property("scenes", "Scene", "cycles.device") == "CPU"
+        assert bl.get_property("scenes", "Scene", "cycles.device") == "GPU"
         assert bl.get_property("scenes", "Scene", "render.resolution_x") == 1234
 
 
@@ -74,12 +75,17 @@ def test_render_failure_restores_scene_settings(blender_bin):
     from blender_agent import BlenderSession
 
     with BlenderSession(blender_bin, env={"BLENDER_AGENT_RENDER_ENGINE": "NO_SUCH_ENGINE"}) as bl:
+        # Without a scene camera the bridge adds a temporary one before the engine switch fails.
+        bl.set_property("scenes", "Scene", "camera", None)
         engine = bl.get_property("scenes", "Scene", "render.engine")
-        with pytest.raises(RemoteError):
+        objects = {o["name"] for o in bl.scene_graph()["objects"]}
+        with pytest.raises(RemoteError, match="NO_SUCH_ENGINE"):
             bl.screenshot(64, 48)
         assert bl.get_property("scenes", "Scene", "render.engine") == engine
         assert bl.get_property("scenes", "Scene", "render.resolution_x") == 1920
-        assert bl.scene_graph()["camera"] == "Camera"
+        graph = bl.scene_graph()
+        assert graph["camera"] is None
+        assert {o["name"] for o in graph["objects"]} == objects
 
 
 def test_poll_failure_is_reported_with_mode(session):
