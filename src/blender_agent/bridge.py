@@ -118,6 +118,8 @@ def _exec_refusal(idname, op, rna, params):
         return f"{idname} with use_trusted=True would run scripts embedded in the files"
     if params.get("load_ui"):
         return f"{idname} with load_ui=True would load the file's UI, whose redraws can render (Freestyle runs Python)"
+    if params.get("app_template"):  # wm.read_homefile: an app template is a Python package it imports
+        return f"{idname} with app_template would import the template's Python package"
     if idname == "wm.previews_batch_generate" and params.get("use_scenes"):
         return (f"{idname} with use_scenes=True renders each scene with its own settings in a child Blender, "
                 "where Freestyle runs Python")
@@ -258,21 +260,19 @@ def _resolve_operator(idname):
 # linked ones included: at startup and after every request, before control returns to the event loop.
 # Nothing else can switch it on: the property is not animatable and accepts no drivers.
 
-_freestyle_turned_off = set()  # scene names, reported with the next response
-
-
 def _disable_freestyle():
+    """Turn Freestyle off everywhere; returns the names of the scenes that had it on."""
+    turned_off = []
     for scene in bpy.data.scenes:
         if scene.render.use_freestyle:
             scene.render.use_freestyle = False  # also allowed on linked scenes: a runtime-only change
-            _freestyle_turned_off.add(scene.name)
+            turned_off.append(scene.name)
+    return sorted(turned_off)
 
 
-if not ALLOW_EXEC:
-    _disable_freestyle()
-    if _freestyle_turned_off:  # the launch file: nobody asked yet, so log it instead of failing a request
-        print(f"blender-agent: Freestyle turned off in scenes {sorted(_freestyle_turned_off)}", file=sys.stderr)
-        _freestyle_turned_off.clear()
+if not ALLOW_EXEC and (_launch_scenes := _disable_freestyle()):
+    # The launch file: nobody asked yet, so log it instead of failing a request.
+    print(f"blender-agent: Freestyle turned off in scenes {_launch_scenes}", file=sys.stderr)
 
 
 def call_operator(idname, params=None, area_type=None, execution_context="EXEC_DEFAULT"):
@@ -280,6 +280,10 @@ def call_operator(idname, params=None, area_type=None, execution_context="EXEC_D
     params = dict(params or {})
     if not ALLOW_EXEC:
         reason = _exec_refusal(idname, op, rna, params)
+        if reason is None and idname.startswith("render.") and execution_context.startswith("INVOKE"):
+            # An invoked render runs as a job that outlives the request, while the Freestyle reset
+            # only holds between requests.
+            reason = f"{idname} with {execution_context} would start a render job that outlives the request"
         if reason:
             raise BridgeError(f"refused without allow_exec: {reason}")
         # use_scripts: do not fall back to the auto-exec preference. use_trusted: GUI sessions
@@ -594,11 +598,9 @@ def handle(request):
     except Exception as exc:  # every failure goes back to the agent, the bridge keeps serving
         response = wire.error_response(request_id, type(exc).__name__, str(exc), traceback.format_exc())
     if not ALLOW_EXEC:
-        _disable_freestyle()  # before control returns to the event loop and its redraws
-        if _freestyle_turned_off:
-            note = (f"Freestyle runs Python and needs allow_exec; it was turned off in scenes "
-                    f"{sorted(_freestyle_turned_off)}")
-            _freestyle_turned_off.clear()
+        turned_off = _disable_freestyle()  # before control returns to the event loop and its redraws
+        if turned_off:
+            note = f"Freestyle runs Python and needs allow_exec; it was turned off in scenes {turned_off}"
             return wire.report_side_effect(response, "FreestyleDisabled", note)
     return response
 

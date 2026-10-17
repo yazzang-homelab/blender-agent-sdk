@@ -34,6 +34,7 @@ def _plant_registered_text(session, marker, blend):
     ("wm.context_toggle", {"data_path": "scene.use_gravity"}),
     ("wm.previews_batch_generate", {"directory": "/tmp/", "use_trusted": True}),
     ("wm.previews_batch_generate", {"directory": "/tmp/", "use_scenes": True}),
+    ("wm.read_homefile", {"app_template": "Video_Editing"}),
     ("render.preset_add", {"name": "x"}),
     *[(idname, {"settings": [{"name": "label", "value": "__import__('os').getpid()"}]}) for idname in (
         "node.add_node", "node.swap_node", "node.add_zone", "node.swap_zone", "node.add_simulation_zone",
@@ -58,6 +59,11 @@ def test_every_node_setting_operator_is_refused(exec_session, session):
     for idname in found:
         with pytest.raises(RemoteError, match="refused without allow_exec"):
             session.call_operator(idname, {"settings": [{"name": "label", "value": "1"}]})
+
+
+def test_invoked_render_jobs_are_refused(session):
+    with pytest.raises(RemoteError, match="render job that outlives the request"):
+        session.call_operator("render.render", execution_context="INVOKE_DEFAULT")
 
 
 def test_ordinary_operators_still_work(session):
