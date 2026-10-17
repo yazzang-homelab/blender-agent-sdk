@@ -128,7 +128,10 @@ Python inside Blender:
   `wm.previews_batch_generate`/`wm.previews_batch_clear` with `use_trusted=True` (forced to `False` otherwise);
 - embedded scripts in `.blend` files: Blender starts with `--disable-autoexec`, every file load
   (`open_file`, `restore`, `wm.open_mainfile`, …) runs with `use_scripts=False`, and an explicit
-  `use_scripts=True` is refused.
+  `use_scripts=True` is refused;
+- Freestyle style modules in Python-script mode, which the renderer runs from text blocks regardless of
+  auto-exec: while any is enabled, renders and operator calls are refused until the agent switches
+  `freestyle_settings.mode` to `'EDITOR'` or turns `render.use_freestyle` off.
 
 This closes code execution *inside the Blender process*. It is **not** a filesystem sandbox: ordinary
 operators can still read and write files the user can reach (`save`, `wm.save_as_mainfile`, image and

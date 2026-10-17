@@ -71,8 +71,7 @@ AUTOEXEC_ON = ["--enable-autoexec"]
 _LOADERS = {
     "wm.open_mainfile": lambda bl, blend: bl.call_operator("wm.open_mainfile", {"filepath": str(blend)}),
     "open_file": lambda bl, blend: bl.open_file(blend),
-    # restore re-opens the checkpoint written from the planted file's contents
-    "restore": lambda bl, blend: (bl.open_file(blend), bl.restore(bl.checkpoint())),
+    "restore": lambda bl, blend: bl.restore(bl.checkpoint()),  # the session planted it itself
 }
 
 
@@ -83,6 +82,8 @@ def test_file_loads_do_not_run_embedded_scripts(blender_bin, session, tmp_path, 
     marker, blend = tmp_path / "marker", tmp_path / "planted.blend"
     _plant_registered_text(session, marker, blend)
     with BlenderSession(blender_bin, extra_args=AUTOEXEC_ON) as bl:
+        if loader == "restore":
+            _plant_registered_text(bl, marker, tmp_path / "copy.blend")
         _LOADERS[loader](bl, blend)
         assert bl.get_property("texts", "Text", "use_module") is True  # the planted file did load
     assert not marker.exists()
@@ -129,6 +130,40 @@ def test_animation_path_update_cannot_eval_planted_data_path(blender_bin, tmp_pa
                 with pytest.raises(RemoteError, match="refused without allow_exec"):
                     bl.call_operator("anim.update_animated_transform_constraints")
                 assert not marker.exists()
+
+
+_FREESTYLE_SCENE = """
+scene = bpy.context.scene
+text = bpy.data.texts.new("style.py")
+text.write(f"open({MARKER!r}, 'w').write('ran')")
+scene.render.use_freestyle = True
+scene.render.resolution_x, scene.render.resolution_y = 32, 24
+settings = bpy.context.view_layer.freestyle_settings
+settings.mode = "SCRIPT"
+bpy.ops.scene.freestyle_module_add()
+settings.modules[-1].script = text
+bpy.ops.wm.save_as_mainfile(filepath=BLEND)
+"""
+
+
+def test_freestyle_style_module_scripts_never_render(blender_bin, exec_session, tmp_path):
+    marker, blend = tmp_path / "marker", tmp_path / "freestyle.blend"
+    exec_session.exec_python(f"MARKER, BLEND = {str(marker)!r}, {str(blend)!r}\n" + _FREESTYLE_SCENE)
+    with BlenderSession(blender_bin, blend_file=blend) as bl:
+        for attempt in (lambda: bl.screenshot(32, 24),
+                        lambda: bl.call_operator("render.render"),
+                        lambda: bl.call_operator("mesh.primitive_cube_add")):
+            with pytest.raises(RemoteError, match="Freestyle style module scripts"):
+                attempt()
+        bl.set_property("scenes", "Scene", "view_layers[0].freestyle_settings.mode", "EDITOR")
+        assert bl.screenshot(32, 24)[0].startswith(b"\x89PNG")  # the agent can opt out and continue
+    assert not marker.exists()
+    # Positive control: the same file does run the script when it renders.
+    exec_session.open_file(blend)
+    exec_session.exec_python("bpy.context.scene.render.engine = 'CYCLES'\n"
+                             "bpy.context.scene.cycles.samples = 1\n"
+                             "bpy.ops.render.render()")
+    assert marker.read_text() == "ran"
 
 
 def test_preview_generation_cannot_run_embedded_scripts(session, tmp_path):

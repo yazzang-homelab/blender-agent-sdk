@@ -137,6 +137,13 @@ def test_exec_python_returns_mappings_as_objects(exec_session):
     assert out["result"] == {"plain": {"x": [1, 2]}, "idprops": {"n": 1, "tags": {"a": "b"}}}
 
 
+def test_collections_with_repeated_names_stay_lists(session):
+    for _ in range(2):  # the factory Cube is active and has one slot; two more have empty names
+        session.call_operator("object.material_slot_add")
+    slots = session.get_property("objects", "Cube", "material_slots")
+    assert isinstance(slots, list) and len(slots) == 3
+
+
 def test_session_can_be_restarted_after_close(blender_bin):
     from blender_agent import BlenderSession
 

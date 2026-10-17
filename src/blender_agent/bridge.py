@@ -68,7 +68,7 @@ _checkpoints = {}  # checkpoint id -> .blend path inside WORKDIR
 #
 # Without --allow-exec the agent must not be able to run Python through the back
 # door of an operator. These operators run, install or eval() code (sources:
-# 5.2/scripts/startup/bl_operators/{wm,presets,userpref,node}.py,
+# 5.2/scripts/startup/bl_operators/{wm,presets,userpref,node,anim,file,assets}.py,
 # bl_ui/generic_ui_list.py, editors/space_text/text_ops.cc, editors/space_script/).
 # This closes code execution inside Blender; it is not a filesystem sandbox.
 
@@ -142,6 +142,8 @@ def _json_value(value):
         return {"struct": type(value).__name__, "path": repr(value)}
     if isinstance(value, set):
         return sorted(value)
+    if isinstance(value, bpy.types.bpy_prop_collection):  # names may repeat or be empty
+        return [_json_value(v) for v in value]
     if hasattr(value, "keys") and hasattr(value, "values"):  # dict, IDPropertyGroup
         return {str(k): _json_value(v) for k, v in value.items()}
     try:
@@ -243,10 +245,28 @@ def _resolve_operator(idname):
     return op, op.get_rna_type()
 
 
+def _freestyle_scripts():
+    """Enabled Freestyle style modules in Python-script mode: the renderer runs their text blocks
+    (source/blender/freestyle), whatever --disable-autoexec and use_scripts say."""
+    return [f"{scene.name}/{layer.name}/{module.script.name}"
+            for scene in bpy.data.scenes if scene.render.use_freestyle
+            for layer in scene.view_layers
+            if layer.use_freestyle and layer.freestyle_settings.mode == "SCRIPT"
+            for module in layer.freestyle_settings.modules if module.use and module.script is not None]
+
+
+def _refuse_freestyle_scripts():
+    scripts = _freestyle_scripts()
+    if scripts:
+        raise BridgeError(f"refused without allow_exec: rendering would run Freestyle style module scripts "
+                          f"{scripts}; set freestyle_settings.mode to 'EDITOR' or render.use_freestyle to False")
+
+
 def call_operator(idname, params=None, area_type=None, execution_context="EXEC_DEFAULT"):
     op, rna = _resolve_operator(idname)
     params = dict(params or {})
     if not ALLOW_EXEC:
+        _refuse_freestyle_scripts()  # any operator may render (render.render, sequencer scene strips, ...)
         reason = _exec_refusal(idname, op, rna, params)
         if reason:
             raise BridgeError(f"refused without allow_exec: {reason}")
@@ -343,6 +363,8 @@ def _render_engine():
 
 
 def _render_png(width, height):
+    if not ALLOW_EXEC:
+        _refuse_freestyle_scripts()
     scene = bpy.context.scene
     render = scene.render
     saved = {
