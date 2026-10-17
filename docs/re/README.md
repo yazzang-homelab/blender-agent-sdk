@@ -187,6 +187,10 @@ viewport engine. The `gpu` module cannot be imported under `-b`: there is no GPU
 - The runtime dump reflects `--factory-startup` with default add-ons. Enabling add-ons registers more operators.
 - `inspect-binary-layout` (pwntools ELF layout, mitigations) could not run: the file is 5× its 32 MiB cap.
 - One machine and one build: Linux x64, official 5.2.2 tarball. Other platforms were not examined.
+- Time budget: the plan set a 3 h cap on REA work. Wall time was about 3.5 h (01:39–05:10) and went over the cap.
+  The cause is that auto-analysis ran twice, about 70 min each. The first `rea analyze` produced only the overview,
+  and each later `rea search` CLI call re-imported the binary. One persistent session
+  (`tools/rea_session.py`) avoids that, and all targeted queries ran in it.
 
 ## Reproduce
 
