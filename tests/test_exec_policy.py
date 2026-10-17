@@ -153,9 +153,7 @@ settings.linesets[0].name = "\\\\', exec(__import__(\\"bpy\\").data.texts[\\"p\\
 """
 
 
-@pytest.mark.parametrize("mode", ["SCRIPT", "EDITOR"])
-def test_freestyle_never_renders_without_exec(blender_bin, exec_session, tmp_path, mode):
-    marker, blend = tmp_path / "marker", tmp_path / "freestyle.blend"
+def _build_freestyle_file(exec_session, marker, blend, mode):
     setup = _FREESTYLE_SCRIPT_MODE if mode == "SCRIPT" else _FREESTYLE_EDITOR_MODE
     exec_session.exec_python(
         f"MARKER = {str(marker)!r}\n{setup}\n"
@@ -165,14 +163,28 @@ def test_freestyle_never_renders_without_exec(blender_bin, exec_session, tmp_pat
         "scene.cycles.samples = 1\n"
         "scene.render.resolution_x, scene.render.resolution_y = 32, 24\n"
         f"bpy.ops.wm.save_as_mainfile(filepath={str(blend)!r})")
-    with BlenderSession(blender_bin, blend_file=blend) as bl:
-        for attempt in (lambda: bl.screenshot(32, 24),
-                        lambda: bl.call_operator("render.render"),
-                        lambda: bl.call_operator("mesh.primitive_cube_add"),
-                        lambda: bl.set_property("screens", "Layout", "areas[0].ui_type", "SEQUENCE_EDITOR")):
-            with pytest.raises(RemoteError, match="Freestyle is enabled in scenes"):
-                attempt()
-        bl.set_property("scenes", "Scene", "render.use_freestyle", False)  # the opt-out stays allowed
+
+
+def _freestyle_on(bl):
+    return bl.get_property("scenes", "Scene", "render.use_freestyle")
+
+
+@pytest.mark.parametrize("mode", ["SCRIPT", "EDITOR"])
+def test_freestyle_is_kept_off_without_exec(blender_bin, exec_session, tmp_path, mode):
+    marker, blend = tmp_path / "marker", tmp_path / "freestyle.blend"
+    _build_freestyle_file(exec_session, marker, blend, mode)
+    with BlenderSession(blender_bin, blend_file=blend) as bl:  # launch file: off before the first redraw
+        assert _freestyle_on(bl) is False
+        bl.screenshot(32, 24)
+        bl.call_operator("render.render")
+    with BlenderSession(blender_bin) as bl:
+        with pytest.raises(RemoteError, match="turned off in scenes") as err:
+            bl.open_file(blend)
+        assert err.value.type_name == "FreestyleDisabled"
+        assert _freestyle_on(bl) is False
+        with pytest.raises(RemoteError, match="FreestyleDisabled|turned off"):
+            bl.set_property("scenes", "Scene", "render.use_freestyle", True)
+        assert _freestyle_on(bl) is False
         bl.call_operator("render.render")
     assert not marker.exists()
     # Positive control: the same file runs the payload when it renders with Freestyle on, even
@@ -180,6 +192,23 @@ def test_freestyle_never_renders_without_exec(blender_bin, exec_session, tmp_pat
     exec_session.call_operator("wm.open_mainfile", {"filepath": str(blend), "use_scripts": False})
     exec_session.exec_python("bpy.ops.render.render()")
     assert marker.read_text() == "ran"
+
+
+def test_opened_files_do_not_bring_their_ui(session, blender_bin, tmp_path):
+    """load_ui is forced off, so a file cannot install, e.g., a sequencer preview that renders on redraw."""
+    blend = tmp_path / "ui.blend"
+    session.set_property("workspaces", "Layout", "name", "Planted")
+    session.save(blend)
+    with BlenderSession(blender_bin) as bl:
+        bl.call_operator("wm.open_mainfile", {"filepath": str(blend)})  # load_ui omitted
+        assert bl.get_property("workspaces", "Layout", "name") == "Layout"
+
+
+def test_freestyle_cannot_be_animated_or_driven(exec_session):
+    """Why turning it off after each request is enough: nothing else can switch it back on."""
+    for call in ("keyframe_insert", "driver_add"):
+        with pytest.raises(RemoteError, match="not animatable"):
+            exec_session.exec_python(f"bpy.context.scene.{call}('render.use_freestyle')")
 
 
 def test_preview_generation_cannot_run_embedded_scripts(session, tmp_path):

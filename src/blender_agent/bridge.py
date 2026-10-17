@@ -247,24 +247,34 @@ def _resolve_operator(idname):
     return op, op.get_rna_type()
 
 
-def _refuse_freestyle():
-    """Freestyle runs Python whenever it renders, whatever --disable-autoexec and use_scripts say:
-    style-module text blocks in SCRIPT mode (BPY_run_text), and in EDITOR mode an expression built
-    from view-layer and line-set names that only escapes quotes (FRS_freestyle.cpp:165-188).
-    So without allow_exec, nothing may run while any scene has it enabled; the agent can still
-    turn it off with set_property (linked scenes cannot be edited: open another file instead)."""
-    if ALLOW_EXEC:
-        return
-    scenes = sorted(scene.name for scene in bpy.data.scenes if scene.render.use_freestyle)
-    if scenes:
-        raise BridgeError(f"refused without allow_exec: Freestyle is enabled in scenes {scenes} and runs Python "
-                          "when rendering; set render.use_freestyle to False on them first")
+# Freestyle runs Python whenever it renders, whatever --disable-autoexec and use_scripts say:
+# style-module text blocks in SCRIPT mode (BPY_run_text), and in EDITOR mode an expression built from
+# view-layer and line-set names that escapes only quotes (FRS_freestyle.cpp:165-188). GUI sessions
+# also render outside requests (a sequencer preview set to Rendered redraws scene strips through
+# RE_RenderFrame). So without allow_exec the bridge keeps render.use_freestyle off in every scene,
+# linked ones included: at startup and after every request, before control returns to the event loop.
+# Nothing else can switch it on: the property is not animatable and accepts no drivers.
+
+_freestyle_turned_off = set()  # scene names, reported with the next response
+
+
+def _disable_freestyle():
+    for scene in bpy.data.scenes:
+        if scene.render.use_freestyle:
+            scene.render.use_freestyle = False  # also allowed on linked scenes: a runtime-only change
+            _freestyle_turned_off.add(scene.name)
+
+
+if not ALLOW_EXEC:
+    _disable_freestyle()
+    if _freestyle_turned_off:  # the launch file: nobody asked yet, so log it instead of failing a request
+        print(f"blender-agent: Freestyle turned off in scenes {sorted(_freestyle_turned_off)}", file=sys.stderr)
+        _freestyle_turned_off.clear()
 
 
 def call_operator(idname, params=None, area_type=None, execution_context="EXEC_DEFAULT"):
     op, rna = _resolve_operator(idname)
     params = dict(params or {})
-    _refuse_freestyle()  # any operator may render (render.render, sequencer scene strips, bake, ...)
     if not ALLOW_EXEC:
         reason = _exec_refusal(idname, op, rna, params)
         if reason:
@@ -321,10 +331,6 @@ def get_property(collection, name, path):
 
 
 def set_property(collection, name, path, value):
-    # The Freestyle opt-out must stay possible; anything else could, in GUI sessions, make a redraw
-    # render (e.g. a sequencer preview of a scene strip).
-    if not (collection == "scenes" and path == "render.use_freestyle" and not value):
-        _refuse_freestyle()
     block = _resolve_datablock(collection, name)
     owner_path, attr = _split_path(path)
     try:
@@ -367,7 +373,6 @@ def _render_engine():
 
 
 def _render_png(width, height):
-    _refuse_freestyle()
     scene = bpy.context.scene
     render = scene.render
     saved = {
@@ -578,9 +583,18 @@ def handle(request):
     if handler is None:
         return _error(request_id, "UnknownMethod", f"unknown method {method!r}")
     try:
-        return {"id": request_id, "ok": True, "result": handler(**request.get("params", {}))}
+        response = {"id": request_id, "ok": True, "result": handler(**request.get("params", {}))}
     except Exception as exc:  # every failure goes back to the agent, the bridge keeps serving
-        return _error(request_id, type(exc).__name__, str(exc), traceback.format_exc())
+        response = _error(request_id, type(exc).__name__, str(exc), traceback.format_exc())
+    if not ALLOW_EXEC:
+        _disable_freestyle()  # before control returns to the event loop and its redraws
+        if _freestyle_turned_off:
+            scenes = sorted(_freestyle_turned_off)
+            _freestyle_turned_off.clear()
+            return _error(request_id, "FreestyleDisabled",
+                          f"Freestyle runs Python and needs allow_exec; it was turned off in scenes {scenes} "
+                          "(the rest of the request completed)")
+    return response
 
 
 def _send_response(sock, response):

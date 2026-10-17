@@ -131,10 +131,10 @@ Python inside Blender:
   `use_scripts=True` is refused;
 - Freestyle, which runs Python whenever it renders regardless of auto-exec: style-module text blocks in
   script mode, and in editor mode an expression built from view-layer and line-set names that escapes only
-  quotes. While any scene has `render.use_freestyle` on, operator calls, renders and property writes
-  (except turning it off) are refused;
-  files opened by operators load without their own UI (`load_ui=False`; `load_ui=True` is refused), so a
-  file cannot bring a viewport or sequencer preview that renders on redraw.
+  quotes. The bridge keeps `render.use_freestyle` off in every scene (linked ones included) at startup and
+  after every request, before GUI redraws can render; a request that turned it on, e.g. by opening a file,
+  gets a `FreestyleDisabled` error after it completes. Files opened by operators load without their own
+  UI (`load_ui=False`; `load_ui=True` is refused).
 
 This closes code execution *inside the Blender process*. It is **not** a filesystem sandbox: ordinary
 operators can still read and write files the user can reach (`save`, `wm.save_as_mainfile`, image and

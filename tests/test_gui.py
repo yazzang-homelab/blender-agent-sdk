@@ -7,7 +7,7 @@ import os
 
 import pytest
 
-from blender_agent import BlenderSession
+from blender_agent import BlenderSession, RemoteError
 
 HAS_DISPLAY = bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
 REQUIRED = os.environ.get("BLENDER_AGENT_REQUIRE_GUI") == "1"
@@ -37,3 +37,8 @@ def test_gui_session_viewport_and_undo(blender_bin):
         bl.call_operator("mesh.primitive_cone_add")
         bl.restore(ckpt)  # wm.open_mainfile from inside the bpy.app.timers callback
         assert "Cone" not in {o["name"] for o in bl.scene_graph()["objects"]}
+
+        # Redraws render outside requests, so Freestyle must already be off when a request returns.
+        with pytest.raises(RemoteError, match="turned off in scenes"):
+            bl.set_property("scenes", "Scene", "render.use_freestyle", True)
+        assert bl.get_property("scenes", "Scene", "render.use_freestyle") is False
