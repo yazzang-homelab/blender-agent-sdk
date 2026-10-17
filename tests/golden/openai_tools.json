@@ -1,0 +1,265 @@
+[
+  {
+    "function": {
+      "description": "List the current scene: every object with type, transform, dimensions, visibility, selection and collections, plus active object, camera, mode and render engine.",
+      "name": "scene_graph",
+      "parameters": {
+        "properties": {},
+        "required": [],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "Detailed state of one object: transform, world bounding box, modifiers, materials, mesh counts or light/camera settings.",
+      "name": "object_info",
+      "parameters": {
+        "properties": {
+          "name": {
+            "description": "Object name.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "Look at the scene. Returns a PNG image. In background sessions this renders from the scene camera (a temporary camera framing all visible objects is used when none exists); in GUI sessions it captures the 3D viewport.",
+      "name": "screenshot",
+      "parameters": {
+        "properties": {
+          "height": {
+            "description": "Image height in pixels (default 480).",
+            "type": "integer"
+          },
+          "source": {
+            "description": "auto = viewport in GUI sessions, render in background sessions.",
+            "enum": [
+              "auto",
+              "render",
+              "viewport"
+            ],
+            "type": "string"
+          },
+          "width": {
+            "description": "Image width in pixels (default 640).",
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "Search Blender's operators (bpy.ops) by keywords, e.g. 'add cube' or 'bevel'. Use before call_operator when you do not know the exact idname.",
+      "name": "search_operators",
+      "parameters": {
+        "properties": {
+          "limit": {
+            "description": "Maximum results (default 20).",
+            "type": "integer"
+          },
+          "query": {
+            "description": "Space-separated keywords; all must match.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "Show an operator's parameters with types and enum values.",
+      "name": "describe_operator",
+      "parameters": {
+        "properties": {
+          "idname": {
+            "description": "Operator idname such as 'mesh.primitive_cube_add'.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "idname"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "Run a Blender operator (bpy.ops.<idname>) with keyword parameters, inside a context override for the given editor area (default VIEW_3D).",
+      "name": "call_operator",
+      "parameters": {
+        "properties": {
+          "area_type": {
+            "description": "Editor area to run in, e.g. VIEW_3D, NODE_EDITOR.",
+            "type": "string"
+          },
+          "idname": {
+            "description": "Operator idname such as 'mesh.primitive_cube_add'.",
+            "type": "string"
+          },
+          "params": {
+            "description": "Operator keyword arguments.",
+            "type": "object"
+          }
+        },
+        "required": [
+          "idname"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "Read an RNA property of a datablock, e.g. collection='objects', name='Cube', path='location' or path=\"modifiers['Bevel'].width\".",
+      "name": "get_property",
+      "parameters": {
+        "properties": {
+          "collection": {
+            "description": "bpy.data collection: objects, meshes, materials, scenes, ...",
+            "type": "string"
+          },
+          "name": {
+            "description": "Datablock name.",
+            "type": "string"
+          },
+          "path": {
+            "description": "RNA data path relative to the datablock.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "collection",
+          "name",
+          "path"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "Assign an RNA property of a datablock. Vectors are JSON arrays.",
+      "name": "set_property",
+      "parameters": {
+        "properties": {
+          "collection": {
+            "description": "bpy.data collection: objects, meshes, materials, scenes, ...",
+            "type": "string"
+          },
+          "name": {
+            "description": "Datablock name.",
+            "type": "string"
+          },
+          "path": {
+            "description": "RNA data path relative to the datablock.",
+            "type": "string"
+          },
+          "value": {
+            "description": "New value (number, string, boolean or array)."
+          }
+        },
+        "required": [
+          "collection",
+          "name",
+          "path",
+          "value"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "Snapshot the whole file so it can be restored later. Returns a checkpoint id.",
+      "name": "checkpoint",
+      "parameters": {
+        "properties": {
+          "label": {
+            "description": "Optional note.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "Restore the file to a checkpoint taken earlier in this session.",
+      "name": "restore",
+      "parameters": {
+        "properties": {
+          "checkpoint_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "checkpoint_id"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "Save the current file as a .blend at the given path.",
+      "name": "save",
+      "parameters": {
+        "properties": {
+          "filepath": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "filepath"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "description": "Run Python inside Blender with `bpy` imported. Printed output is returned; assign to `result` to return a value. Only available when the session allows it.",
+      "name": "exec_python",
+      "parameters": {
+        "properties": {
+          "code": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      }
+    },
+    "type": "function"
+  }
+]

@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "blender-agent-sdk"
+version = "0.1.0"
+description = "Drive Blender from AI agents through a plain Python SDK (no MCP), backed by a reverse-engineered map of Blender 5.2"
+readme = "README.md"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+authors = [{ name = "yazzang-homelab" }]
+keywords = ["blender", "bpy", "agent", "llm", "computer-use", "function-calling"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Graphics :: 3D Modeling",
+]
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+openai = ["openai>=1.40"]
+anthropic = ["anthropic>=0.40"]
+
+[project.urls]
+Repository = "https://github.com/yazzang-homelab/blender-agent-sdk"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/blender_agent"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
