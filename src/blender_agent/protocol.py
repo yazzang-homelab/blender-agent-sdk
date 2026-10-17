@@ -72,6 +72,19 @@ def recv_frame(sock):
         raise InvalidPayload(f"invalid JSON payload: {exc}") from exc
 
 
+def error_response(request_id, type_name, message, traceback=""):
+    return {"id": request_id, "ok": False, "error": {"type": type_name, "message": message, "traceback": traceback}}
+
+
+def report_side_effect(response, type_name, note):
+    """Report something the bridge undid after a request. A failed request keeps its own error,
+    with the note appended; a successful one becomes a ``type_name`` error."""
+    if not response["ok"]:
+        error = response["error"]
+        return {**response, "error": {**error, "message": f"{error['message']} (also: {note})"}}
+    return error_response(response["id"], type_name, f"{note} (the request itself completed)")
+
+
 __all__ = [
     "MAX_FRAME_BYTES",
     "ConnectionClosed",
@@ -79,6 +92,8 @@ __all__ = [
     "InvalidPayload",
     "ProtocolError",
     "encode_frame",
+    "error_response",
     "recv_frame",
+    "report_side_effect",
     "send_frame",
 ]

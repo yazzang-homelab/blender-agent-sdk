@@ -18,7 +18,10 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def test_gui_session_viewport_and_undo(blender_bin):
+def test_gui_session_viewport_and_undo(blender_bin, exec_session, tmp_path):
+    freestyle_blend = tmp_path / "freestyle.blend"
+    exec_session.exec_python("bpy.context.scene.render.use_freestyle = True\n"
+                             f"bpy.ops.wm.save_as_mainfile(filepath={str(freestyle_blend)!r})")
     assert HAS_DISPLAY, "BLENDER_AGENT_REQUIRE_GUI=1 but no DISPLAY/WAYLAND_DISPLAY is set"
     with BlenderSession(blender_bin, background=False, timeout=120, startup_timeout=120) as bl:
         assert bl.ping()["background"] is False
@@ -38,7 +41,9 @@ def test_gui_session_viewport_and_undo(blender_bin):
         bl.restore(ckpt)  # wm.open_mainfile from inside the bpy.app.timers callback
         assert "Cone" not in {o["name"] for o in bl.scene_graph()["objects"]}
 
-        # Redraws render outside requests, so Freestyle must already be off when a request returns.
-        with pytest.raises(RemoteError, match="turned off in scenes"):
-            bl.set_property("scenes", "Scene", "render.use_freestyle", True)
+        # Redraws render outside requests, so Freestyle must be off whenever a request returns:
+        # an opened file has it turned off before control goes back to the event loop.
+        with pytest.raises(RemoteError, match="turned off in scenes") as err:
+            bl.open_file(freestyle_blend)
+        assert err.value.type_name == "FreestyleDisabled"
         assert bl.get_property("scenes", "Scene", "render.use_freestyle") is False

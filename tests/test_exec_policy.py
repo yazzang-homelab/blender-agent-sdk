@@ -33,6 +33,7 @@ def _plant_registered_text(session, marker, blend):
     ("asset.open_containing_blend_file", {}),
     ("wm.context_toggle", {"data_path": "scene.use_gravity"}),
     ("wm.previews_batch_generate", {"directory": "/tmp/", "use_trusted": True}),
+    ("wm.previews_batch_generate", {"directory": "/tmp/", "use_scenes": True}),
     ("render.preset_add", {"name": "x"}),
     *[(idname, {"settings": [{"name": "label", "value": "__import__('os').getpid()"}]}) for idname in (
         "node.add_node", "node.swap_node", "node.add_zone", "node.swap_zone", "node.add_simulation_zone",
@@ -182,8 +183,9 @@ def test_freestyle_is_kept_off_without_exec(blender_bin, exec_session, tmp_path,
             bl.open_file(blend)
         assert err.value.type_name == "FreestyleDisabled"
         assert _freestyle_on(bl) is False
-        with pytest.raises(RemoteError, match="FreestyleDisabled|turned off"):
-            bl.set_property("scenes", "Scene", "render.use_freestyle", True)
+        for path in ("render.use_freestyle", "view_layers[0].use_freestyle"):
+            with pytest.raises(RemoteError, match="refused without allow_exec: Freestyle"):
+                bl.set_property("scenes", "Scene", path, True)
         assert _freestyle_on(bl) is False
         bl.call_operator("render.render")
     assert not marker.exists()
@@ -202,6 +204,19 @@ def test_opened_files_do_not_bring_their_ui(session, blender_bin, tmp_path):
     with BlenderSession(blender_bin) as bl:
         bl.call_operator("wm.open_mainfile", {"filepath": str(blend)})  # load_ui omitted
         assert bl.get_property("workspaces", "Layout", "name") == "Layout"
+
+
+def test_scene_previews_do_not_render_freestyle(blender_bin, exec_session, tmp_path):
+    """wm.previews_batch_generate renders scenes with their own settings in a child Blender."""
+    marker, blend = tmp_path / "marker", tmp_path / "freestyle.blend"
+    _build_freestyle_file(exec_session, marker, blend, "SCRIPT")
+    params = {"directory": f"{tmp_path}/", "files": [{"name": blend.name}]}
+    with BlenderSession(blender_bin) as bl:
+        bl.call_operator("wm.previews_batch_generate", params)  # use_scenes forced to False
+    assert not marker.exists()
+    # Positive control: with scene previews on, the child Blender does run the Freestyle script.
+    exec_session.call_operator("wm.previews_batch_generate", {**params, "use_scenes": True})
+    assert marker.read_text() == "ran"
 
 
 def test_freestyle_cannot_be_animated_or_driven(exec_session):

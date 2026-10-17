@@ -118,6 +118,9 @@ def _exec_refusal(idname, op, rna, params):
         return f"{idname} with use_trusted=True would run scripts embedded in the files"
     if params.get("load_ui"):
         return f"{idname} with load_ui=True would load the file's UI, whose redraws can render (Freestyle runs Python)"
+    if idname == "wm.previews_batch_generate" and params.get("use_scenes"):
+        return (f"{idname} with use_scenes=True renders each scene with its own settings in a child Blender, "
+                "where Freestyle runs Python")
     return None
 
 
@@ -279,11 +282,16 @@ def call_operator(idname, params=None, area_type=None, execution_context="EXEC_D
         reason = _exec_refusal(idname, op, rna, params)
         if reason:
             raise BridgeError(f"refused without allow_exec: {reason}")
-        for flag in ("use_scripts", "use_trusted", "load_ui"):
+        # use_scripts: do not fall back to the auto-exec preference. use_trusted: GUI sessions
+        # re-use an operator's last properties, so pin the default explicitly. load_ui: a file's own
+        # UI could redraw a sequencer preview that renders. use_scenes (previews only, default True):
+        # the child Blender renders the file's scenes as they are, Freestyle included; object and
+        # collection previews render in fresh scenes.
+        flags = ["use_scripts", "use_trusted", "load_ui"]
+        if idname == "wm.previews_batch_generate":
+            flags.append("use_scenes")
+        for flag in flags:
             if rna.properties.get(flag) is not None:
-                # use_scripts: do not fall back to the auto-exec preference. use_trusted: GUI
-                # sessions re-use an operator's last properties, so pin the default explicitly.
-                # load_ui: a file's own UI could redraw a sequencer preview that renders.
                 params[flag] = False
     override = _area_override(area_type or "VIEW_3D")
     with bpy.context.temp_override(**override):
@@ -331,6 +339,9 @@ def get_property(collection, name, path):
 
 
 def set_property(collection, name, path, value):
+    if not ALLOW_EXEC and value and path.rpartition(".")[2] == "use_freestyle":
+        # The post-request reset would undo it, but a running GUI render job could read it first.
+        raise BridgeError("refused without allow_exec: Freestyle runs Python when rendering")
     block = _resolve_datablock(collection, name)
     owner_path, attr = _split_path(path)
     try:
@@ -570,30 +581,25 @@ HANDLERS = {
 
 # --------------------------------------------------------------------- serving
 
-def _error(request_id, type_name, message, tb=""):
-    return {"id": request_id, "ok": False, "error": {"type": type_name, "message": message, "traceback": tb}}
-
-
 def handle(request):
     if not isinstance(request, dict) or not isinstance(request.get("params", {}), dict):
-        return _error(None, "BadRequest", "a request must be an object with an object 'params'")
+        return wire.error_response(None, "BadRequest", "a request must be an object with an object 'params'")
     request_id = request.get("id")
     method = request.get("method")
     handler = HANDLERS.get(method)
     if handler is None:
-        return _error(request_id, "UnknownMethod", f"unknown method {method!r}")
+        return wire.error_response(request_id, "UnknownMethod", f"unknown method {method!r}")
     try:
         response = {"id": request_id, "ok": True, "result": handler(**request.get("params", {}))}
     except Exception as exc:  # every failure goes back to the agent, the bridge keeps serving
-        response = _error(request_id, type(exc).__name__, str(exc), traceback.format_exc())
+        response = wire.error_response(request_id, type(exc).__name__, str(exc), traceback.format_exc())
     if not ALLOW_EXEC:
         _disable_freestyle()  # before control returns to the event loop and its redraws
         if _freestyle_turned_off:
-            scenes = sorted(_freestyle_turned_off)
+            note = (f"Freestyle runs Python and needs allow_exec; it was turned off in scenes "
+                    f"{sorted(_freestyle_turned_off)}")
             _freestyle_turned_off.clear()
-            return _error(request_id, "FreestyleDisabled",
-                          f"Freestyle runs Python and needs allow_exec; it was turned off in scenes {scenes} "
-                          "(the rest of the request completed)")
+            return wire.report_side_effect(response, "FreestyleDisabled", note)
     return response
 
 
@@ -601,7 +607,7 @@ def _send_response(sock, response):
     try:
         frame = wire.encode_frame(response)
     except wire.FrameTooLarge as exc:
-        frame = wire.encode_frame(_error(response.get("id"), "ResponseTooLarge", str(exc)))
+        frame = wire.encode_frame(wire.error_response(response.get("id"), "ResponseTooLarge", str(exc)))
     sock.sendall(frame)
 
 
@@ -610,7 +616,7 @@ def _next_request(sock):
     try:
         return wire.recv_frame(sock), None
     except wire.InvalidPayload as exc:
-        return None, _error(None, "BadRequest", str(exc))
+        return None, wire.error_response(None, "BadRequest", str(exc))
 
 
 def _serve_one(sock, request, rejected):

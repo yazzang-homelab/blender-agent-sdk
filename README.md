@@ -133,7 +133,9 @@ Python inside Blender:
   script mode, and in editor mode an expression built from view-layer and line-set names that escapes only
   quotes. The bridge keeps `render.use_freestyle` off in every scene (linked ones included) at startup and
   after every request, before GUI redraws can render; a request that turned it on, e.g. by opening a file,
-  gets a `FreestyleDisabled` error after it completes. Files opened by operators load without their own
+  gets a `FreestyleDisabled` error after it completes (a failed request keeps its own error, with a note).
+  Turning it on with `set_property` is refused, and so are scene previews (`wm.previews_batch_generate`
+  with `use_scenes=True`, forced to `False` otherwise), which a child Blender renders with the file's settings. Files opened by operators load without their own
   UI (`load_ui=False`; `load_ui=True` is refused).
 
 This closes code execution *inside the Blender process*. It is **not** a filesystem sandbox: ordinary

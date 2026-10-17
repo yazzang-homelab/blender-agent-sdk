@@ -60,3 +60,18 @@ def test_invalid_json_payload():
         a.sendall(struct.pack(">I", 3) + b"{x}")
         with pytest.raises(wire.ProtocolError, match="invalid JSON"):
             wire.recv_frame(b)
+
+
+def test_side_effect_turns_a_success_into_an_error():
+    ok = {"id": 7, "ok": True, "result": {"scene": "Scene"}}
+    reported = wire.report_side_effect(ok, "FreestyleDisabled", "Freestyle was turned off")
+    assert reported == wire.error_response(7, "FreestyleDisabled",
+                                           "Freestyle was turned off (the request itself completed)")
+
+
+def test_side_effect_keeps_the_original_failure():
+    failed = wire.error_response(7, "RuntimeError", "append failed", "Traceback ...")
+    reported = wire.report_side_effect(failed, "FreestyleDisabled", "Freestyle was turned off")
+    assert reported["error"] == {"type": "RuntimeError", "traceback": "Traceback ...",
+                                 "message": "append failed (also: Freestyle was turned off)"}
+    assert failed["error"]["message"] == "append failed"  # not mutated
