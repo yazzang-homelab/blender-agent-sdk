@@ -64,6 +64,8 @@ def test_every_node_setting_operator_is_refused(exec_session, session):
 def test_invoked_render_jobs_are_refused(session):
     with pytest.raises(RemoteError, match="render job that outlives the request"):
         session.call_operator("render.render", execution_context="INVOKE_DEFAULT")
+    with pytest.raises(RemoteError, match="render job that outlives the request"):
+        session.call_operator("node.render_changed")
 
 
 def test_ordinary_operators_still_work(session):

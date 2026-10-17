@@ -280,10 +280,15 @@ def call_operator(idname, params=None, area_type=None, execution_context="EXEC_D
     params = dict(params or {})
     if not ALLOW_EXEC:
         reason = _exec_refusal(idname, op, rna, params)
-        if reason is None and idname.startswith("render.") and execution_context.startswith("INVOKE"):
-            # An invoked render runs as a job that outlives the request, while the Freestyle reset
-            # only holds between requests.
-            reason = f"{idname} with {execution_context} would start a render job that outlives the request"
+        # A render job outlives the request that started it, while the Freestyle reset only holds
+        # between requests. node.render_changed invokes render.render itself.
+        starts_job = idname == "node.render_changed" or (
+            idname.startswith("render.") and execution_context.startswith("INVOKE"))
+        if reason is None and starts_job:
+            reason = (f"{idname} with {execution_context} would start a render job that outlives the "
+                      f"request; use EXEC_DEFAULT")
+        if reason is None and bpy.app.is_job_running("RENDER"):
+            reason = "a render job is running; wait for it to finish"
         if reason:
             raise BridgeError(f"refused without allow_exec: {reason}")
         # use_scripts: do not fall back to the auto-exec preference. use_trusted: GUI sessions

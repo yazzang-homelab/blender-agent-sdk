@@ -124,8 +124,9 @@ Python inside Blender:
   values (`node.add_node`, `node.swap_node` and the zone, group and bundle adders: 12 operators in 5.2.2);
 - operators that write or re-evaluate agent-controlled Python: `anim.keying_set_export` (writes a `.py`) and
   `anim.update_animated_transform_constraints` (`eval()`s every F-Curve and driver `data_path`);
-- `wm.read_homefile(app_template=...)`, since an app template is a Python package, and invoked
-  (`INVOKE_*`) `render.*` operators, whose render jobs outlive the request;
+- `wm.read_homefile`/`wm.read_factory_settings` with `app_template`, since an app template is a
+  Python package; invoked (`INVOKE_*`) `render.*` operators and `node.render_changed`, whose render
+  jobs outlive the request (operators are also refused while a render job runs);
 - operators that start another Blender which could run scripts: `asset.open_containing_blend_file`, and
   `wm.previews_batch_generate`/`wm.previews_batch_clear` with `use_trusted=True` (forced to `False` otherwise);
 - embedded scripts in `.blend` files: Blender starts with `--disable-autoexec`, every file load
