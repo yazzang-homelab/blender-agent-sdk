@@ -28,13 +28,28 @@ def _plant_registered_text(session, marker, blend):
     ("wm.properties_edit_value", {"data_path": "object", "property_name": "x", "eval_string": "1"}),
     ("wm.url_open", {"url": "https://example.com"}),
     ("render.preset_add", {"name": "x"}),
-    ("node.add_node", {"type": "ShaderNodeMath", "settings": [{"name": "operation", "value": "'ADD'"}]}),
+    *[(idname, {"settings": [{"name": "label", "value": "__import__('os').getpid()"}]}) for idname in (
+        "node.add_node", "node.swap_node", "node.add_zone", "node.swap_zone", "node.add_simulation_zone",
+        "node.add_repeat_zone", "node.add_closure_zone", "node.add_foreach_geometry_element_zone",
+        "node.add_empty_group", "node.swap_empty_group", "node.add_typed_bundle", "node.swap_typed_bundle")],
     ("wm.open_mainfile", {"filepath": "/tmp/x.blend", "use_scripts": True}),
 ])
 def test_code_running_operators_are_refused(session, idname, params):
     with pytest.raises(RemoteError, match="refused without allow_exec"):
         session.call_operator(idname, params)
     assert session.ping()["pong"] is True
+
+
+def test_every_node_setting_operator_is_refused(exec_session, session):
+    """Every operator with a NodeSetting collection eval()s it, including ones added later."""
+    found = exec_session.exec_python(
+        "result = sorted(f'{m}.{o}' for m in dir(bpy.ops) for o in dir(getattr(bpy.ops, m))"
+        " if (s := getattr(getattr(bpy.ops, m), o).get_rna_type().properties.get('settings')) is not None"
+        " and s.type == 'COLLECTION' and s.fixed_type.identifier == 'NodeSetting')")["result"]
+    assert len(found) == 12
+    for idname in found:
+        with pytest.raises(RemoteError, match="refused without allow_exec"):
+            session.call_operator(idname, {"settings": [{"name": "label", "value": "1"}]})
 
 
 def test_ordinary_operators_still_work(session):

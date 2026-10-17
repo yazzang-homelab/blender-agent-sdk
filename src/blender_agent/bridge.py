@@ -103,7 +103,11 @@ def _exec_refusal(idname, op, rna, params):
             return f"{idname} evaluates its {sorted(names & _EVAL_PARAMS)} parameters as Python"
         if py_module.endswith("presets"):
             return f"{idname} reads or writes Python preset scripts"
-        if "settings" in params and idname in {"node.add_node", "node.swap_node"}:
+        # NodeAddOperator and every subclass (add_node, swap_node, the zone/group/bundle
+        # adders) eval() each NodeSetting.value (bl_operators/node.py).
+        settings = rna.properties.get("settings")
+        if (params.get("settings") and settings is not None and settings.type == "COLLECTION"
+                and settings.fixed_type.identifier == "NodeSetting"):
             return f"{idname} evaluates settings values as Python"
     if params.get("use_scripts"):
         return f"{idname} with use_scripts=True would run scripts embedded in the file"
