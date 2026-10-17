@@ -106,8 +106,27 @@ your agent ──dispatch()──► BlenderSession ──Unix socket (0700 dir)
 ```
 
 The process is launched as
-`blender [-b] --factory-startup --python-exit-code 1 --python bridge.py -- --socket <path> [--allow-exec]`.
-`exec_python` is gated by the bridge itself (from its launch arguments), not only by the client.
+`blender [-b] --factory-startup [--disable-autoexec] [file.blend] --python-exit-code 1 --python bridge.py -- --socket <path> --workdir <dir> [--allow-exec]`.
+The socket, Blender's log, renders and checkpoints all live in one private 0700 directory that the client
+removes on every exit path (close, timeout, crash, failed start).
+
+## Trust model
+
+Without `allow_exec=True` the bridge, not only the client, refuses every known way to run agent-controlled
+Python inside Blender:
+
+- the `exec_python` method;
+- operators that run scripts or code: `script.*`, `console.*`, `text.run_script`, preset add/execute operators,
+  add-on and extension management (`preferences.*`, `extensions.*`), external openers (`wm.url_open`,
+  `wm.path_open`, `image.external_edit`), and any operator taking a Python-evaluated parameter
+  (`data_path`, `eval_string`, …, as in `wm.context_*`) or `node.add_node(settings=...)`;
+- embedded scripts in `.blend` files: Blender starts with `--disable-autoexec`, every file load
+  (`open_file`, `restore`, `wm.open_mainfile`, …) runs with `use_scripts=False`, and an explicit
+  `use_scripts=True` is refused.
+
+This closes code execution *inside the Blender process*. It is **not** a filesystem sandbox: ordinary
+operators can still read and write files the user can reach (`save`, `wm.save_as_mainfile`, image and
+mesh import/export). Run untrusted agents in a container or VM with only the files they need.
 
 ## Why not MCP?
 
@@ -119,15 +138,16 @@ in CI, and its tools drop into any function-calling loop. Prior art for comparis
 
 ## Reverse engineering
 
-The SDK's shape comes from taking the stripped 167 MB Blender 5.2.2 binary apart with REA + Ghidra (full
+The SDK's shape comes from taking the stripped 174 MB (166 MiB) Blender 5.2.2 binary apart with REA + Ghidra (full
 auto-analysis: 301,393 procedures, 70 min). The results were cross-checked against the v5.2.2 source and a full runtime
 RNA dump. Highlights from [`docs/re/`](docs/re/README.md):
 
-- CPython is statically linked (`.PyRuntime` section). `bpy`, `gpu` and `bmesh` live in an internal `_inittab` and are
-  never exported, so the only bridge that needs no install is a `--python` script inside Blender's own interpreter.
+- CPython is statically linked (`.PyRuntime` section). `gpu`, `bmesh` and friends live in an internal `_inittab`, and
+  `_bpy` is created at startup with `PyModule_New`. None of them is exported, so the only bridge that needs no install
+  is a `--python` script inside Blender's own interpreter.
 - The `-b` handler just sets `G.background` and mutes audio. The window manager survives, but there is no event loop
-  and no GPU context, so the bridge owns the main thread under `-b` and screenshots come from a render instead of
-  `GPUOffScreen`.
+  and the GPU is not initialized, so the bridge owns the main thread under `-b`. Screenshots come from a render
+  rather than `GPUOffScreen`, which would need `gpu.init()` and a real GPU (GitHub runners have none).
 - `bpy_op_fn_call_impl` (decompiled) polls, converts kwargs to RNA, releases the GIL and calls
   `WM_operator_call_py(..., is_undo)`. That `is_undo` flag is why GUI sessions pass it, and why `-b` sessions use
   `.blend` checkpoints.
@@ -163,7 +183,9 @@ AI 에이전트가 **MCP 없이** 순수 Python SDK로 Blender를 조작(compute
 - 관찰(`scene_graph`, `object_info`, `screenshot`) · 탐색(`search_operators`, `describe_operator`) ·
   조작(`call_operator`, `set_property`, `checkpoint`/`restore`, `save`) 도구를 OpenAI/Anthropic
   function-calling 스키마로 제공하고 `dispatch()` 한 줄로 실행합니다.
-- `exec_python`은 기본 비활성이며, 브리지가 실행 인자로 직접 차단합니다.
+- `exec_python`은 기본 비활성이며, 브리지가 실행 인자로 직접 차단합니다. 스크립트를 실행하는 연산자
+  (`script.*`, `text.run_script`, `data_path`/`eval_string` 인자, `.blend` 내장 스크립트 등)도 막지만,
+  파일시스템 샌드박스는 아니므로 신뢰할 수 없는 에이전트는 컨테이너에서 돌리십시오.
 - Blender 내부 예외는 `RemoteError`(타입·메시지·원격 traceback)로 돌아오고 세션은 유지됩니다.
   멈추거나 죽으면 타임아웃 후 프로세스를 정리하고 `SessionLost`를 던집니다.
 - 헤드리스(`-b`)에는 undo 스택이 없어 `checkpoint`/`restore`(.blend 스냅샷)를 쓰고, GUI 세션에서는

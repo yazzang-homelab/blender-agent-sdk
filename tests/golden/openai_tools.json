@@ -32,7 +32,7 @@
   },
   {
     "function": {
-      "description": "Look at the scene. Returns a PNG image. In background sessions this renders from the scene camera (a temporary camera framing all visible objects is used when none exists); in GUI sessions it captures the 3D viewport.",
+      "description": "Look at the scene. Returns a PNG image. In background sessions this renders from the scene camera (a temporary camera framing all visible objects is used when none exists); in GUI sessions it captures the 3D viewport, keeping the viewport's aspect ratio (width/height are then an upper bound).",
       "name": "screenshot",
       "parameters": {
         "properties": {

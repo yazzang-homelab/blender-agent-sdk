@@ -54,11 +54,39 @@ def test_dispatch_returns_remote_errors_instead_of_raising(session):
     assert outcome == {"ok": False, "error": "BridgeError: no object named 'missing'", "image_png": None}
 
 
-def test_dispatch_rejects_unknown_tool_and_bad_arguments(session):
-    assert dispatch(session, "rm_rf", {})["ok"] is False
-    bad = dispatch(session, "object_info", {"nam": "Cube"})
-    assert bad["ok"] is False
-    assert "unexpected keyword" in bad["error"] or "missing" in bad["error"]
+class _NoCallSession:
+    """Any attribute access means dispatch reached the session, which it must not."""
+
+    def __getattr__(self, name):
+        raise AssertionError(f"dispatch touched session.{name} for an invalid call")
+
+
+@pytest.mark.parametrize("name, arguments, message", [
+    ("rm_rf", {}, "unknown tool"),
+    ("object_info", {"nam": "Cube"}, "unknown ['nam'], missing ['name']"),
+    ("object_info", "{not json", "not valid JSON"),
+    ("object_info", "", "not valid JSON"),
+    ("scene_graph", "null", "must be a JSON object, got NoneType"),
+    ("scene_graph", "[]", "must be a JSON object, got list"),
+    ("scene_graph", None, "must be a JSON object, got NoneType"),
+    ("scene_graph", 0, "must be a JSON object, got int"),
+    ("screenshot", {"timeout": 1}, "unknown ['timeout']"),
+])
+def test_dispatch_rejects_invalid_calls_without_touching_blender(name, arguments, message):
+    outcome = dispatch(_NoCallSession(), name, arguments)
+    assert outcome["ok"] is False
+    assert message in outcome["error"]
+
+
+def test_dispatch_propagates_session_lost(blender_bin):
+    from blender_agent import BlenderSession, SessionLost
+
+    bl = BlenderSession(blender_bin).start()
+    bl._proc.kill()
+    bl._proc.wait()
+    with pytest.raises(SessionLost):
+        dispatch(bl, "scene_graph", {})
+    bl.close()
 
 
 @pytest.mark.parametrize("tool", TOOLS, ids=lambda t: t["name"])

@@ -50,6 +50,10 @@ def main():
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--json-out", type=Path)
     args = ap.parse_args()
+    if not args.scripts.is_dir():
+        ap.error(f"--scripts {args.scripts} is not a directory")
+    if not args.binary_idnames.is_file():
+        ap.error(f"--binary-idnames {args.binary_idnames} is not a file")
 
     raw = [s.strip() for s in args.binary_idnames.read_text().splitlines() if s.strip()]
     binary = {to_python_name(s): s for s in raw if to_python_name(s)}

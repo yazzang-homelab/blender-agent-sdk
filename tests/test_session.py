@@ -56,6 +56,37 @@ def test_screenshot_is_png(session):
     assert meta["temporary_camera"] is False
 
 
+def test_cycles_screenshot_leaves_scene_settings_untouched(blender_bin):
+    from blender_agent import BlenderSession
+
+    with BlenderSession(blender_bin, env={"BLENDER_AGENT_RENDER_ENGINE": "CYCLES"}) as bl:
+        bl.set_property("scenes", "Scene", "render.engine", "CYCLES")
+        bl.set_property("scenes", "Scene", "cycles.samples", 77)
+        bl.set_property("scenes", "Scene", "render.resolution_x", 1234)
+        png, meta = bl.screenshot(64, 48)
+        assert png.startswith(PNG_SIGNATURE) and meta["engine"] == "CYCLES"
+        assert bl.get_property("scenes", "Scene", "cycles.samples") == 77
+        assert bl.get_property("scenes", "Scene", "cycles.device") == "CPU"
+        assert bl.get_property("scenes", "Scene", "render.resolution_x") == 1234
+
+
+def test_render_failure_restores_scene_settings(blender_bin):
+    from blender_agent import BlenderSession
+
+    with BlenderSession(blender_bin, env={"BLENDER_AGENT_RENDER_ENGINE": "NO_SUCH_ENGINE"}) as bl:
+        engine = bl.get_property("scenes", "Scene", "render.engine")
+        with pytest.raises(RemoteError):
+            bl.screenshot(64, 48)
+        assert bl.get_property("scenes", "Scene", "render.engine") == engine
+        assert bl.get_property("scenes", "Scene", "render.resolution_x") == 1920
+        assert bl.scene_graph()["camera"] == "Camera"
+
+
+def test_poll_failure_is_reported_with_mode(session):
+    with pytest.raises(RemoteError, match=r"mesh.subdivide.poll\(\) failed .*mode='OBJECT'"):
+        session.call_operator("mesh.subdivide")
+
+
 def test_screenshot_without_camera_uses_temporary_camera(session):
     session.set_property("scenes", "Scene", "camera", None)
     assert session.scene_graph()["camera"] is None

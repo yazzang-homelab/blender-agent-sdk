@@ -67,7 +67,7 @@ def anthropic_loop(session, task, out_dir, model="claude-sonnet-4-5", max_turns=
             results.append({"type": "tool_result", "tool_use_id": call.id, "content": content,
                             "is_error": not outcome["ok"]})
         messages.append({"role": "user", "content": results})
-    return "turn limit reached"
+    return None  # turn limit reached
 
 
 def openai_loop(session, task, out_dir, model="gpt-5", max_turns=30):
@@ -90,7 +90,7 @@ def openai_loop(session, task, out_dir, model="gpt-5", max_turns=30):
         if images:  # tool messages cannot carry images, so attach them as a user turn
             messages.append({"role": "user", "content": [
                 {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{data}"}} for data in images]})
-    return "turn limit reached"
+    return None  # turn limit reached
 
 
 POLICIES = {"scripted": scripted, "anthropic": anthropic_loop, "openai": openai_loop}
@@ -109,6 +109,9 @@ def main(argv=None):
     with BlenderSession(args.blender, background=not args.gui) as session:
         summary = POLICIES[args.policy](session, args.task, args.out)
         session.save(args.out / "result.blend")
+    if summary is None:
+        print(json.dumps({"error": "turn limit reached", "output": str(args.out)}, ensure_ascii=False))
+        return 2
     print(json.dumps({"summary": summary, "output": str(args.out)}, ensure_ascii=False))
     return 0
 

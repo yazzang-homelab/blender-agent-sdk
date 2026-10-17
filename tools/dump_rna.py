@@ -47,10 +47,7 @@ def dump_operators():
         module = getattr(bpy.ops, module_name)
         for op_name in dir(module):
             idname = f"{module_name}.{op_name}"
-            try:
-                rna = getattr(module, op_name).get_rna_type()
-            except (AttributeError, KeyError, RuntimeError):
-                continue
+            rna = getattr(module, op_name).get_rna_type()  # a failure here must abort the dump
             ops[idname] = {
                 "bl_idname": rna.identifier,
                 "name": rna.name,

@@ -46,7 +46,7 @@ type system. All conclusions below are labeled:
 
 ## Findings
 
-### 1. Python is statically linked, and `bpy` lives in an internal init table (confirmed)
+### 1. Python is statically linked, and Blender's modules exist only inside its own interpreter (confirmed)
 
 - A dedicated `.PyRuntime` section of 0x45310 bytes sits next to `.data`
   ([section headers](evidence/objdump-section_headers.json)). This is CPython's static runtime state.
@@ -54,9 +54,12 @@ type system. All conclusions below are labeled:
   `PyRun_*`, `PyEval_EvalCode`) plus 37 `PyInit_*` modules. Those modules include `mathutils*`, `aud` and
   `manta_main`. The bundle ships no `libpython*.so`, only `5.2/python/lib/libpython3.13.a` and 59 `lib-dynload`
   extension modules, which resolve their `Py*` imports against the executable.
-- `bpy`, `bmesh`, `gpu`, `blf`, `imbuf` and `idprop` are **not** exported. They are registered through
-  `bpy_internal_modules[]`, an `_inittab` defined in `source/blender/python/intern/bpy_interface.cc:320`. The only
-  way to reach them is code running in Blender's own interpreter.
+- None of Blender's own modules is exported. `bmesh`, `gpu`, `blf`, `imbuf`, `idprop` and `mathutils` are registered
+  through `bpy_internal_modules[]`, an `_inittab` defined in `source/blender/python/intern/bpy_interface.cc:320`.
+  `bpy` is not in that table: `BPy_init_modules` (`source/blender/python/intern/bpy.cc:760`) creates the C module
+  `_bpy` with `PyModule_New` and inserts it into `sys.modules` (:784-787). The pure-Python package
+  `5.2/scripts/modules/bpy/__init__.py` then re-exports it (`from _bpy import ...`). Both mechanisms exist only in
+  a running Blender, so these modules can be reached only by code in Blender's own interpreter.
 
 Consequence for the SDK: an out-of-process client cannot `import bpy` or link against Blender. The bridge therefore has
 to run inside Blender, and the cheapest entry point that needs no install is `--python <file>`.
@@ -75,7 +78,7 @@ to run inside Blender, and the cheapest entry point that needs no install is `--
 The `-b` handler sets a single global byte (`DAT_0aa2b9c1 = 1`, which is `G.background = true`) and forces the
 audio device to `"None"`. That is the whole background mode. It does not tear down the window manager, which agrees
 with the runtime observation that `bpy.context.window`/`screen` and a `VIEW_3D` area still exist under `-b`. What
-background mode lacks is a GPU context and an event loop, so:
+background mode lacks is an event loop and an initialized GPU context (see finding 6), so:
 
 - the bridge **owns the main thread** in `-b` (a blocking serve loop inside the `--python` script). `bpy.app.timers`
   never fire, because no event loop runs.
@@ -160,13 +163,21 @@ list of callable operators, and it includes the 260 Python operators the binary 
 `describe_operator` therefore query it live instead of shipping a static table. The dump in `data/` is the
 reproducible snapshot for 5.2.2.
 
-### 6. Screenshots: `GPUOffScreen.draw_view3d` needs a GPU context (confirmed)
+### 6. Screenshots: `GPUOffScreen.draw_view3d` needs an initialized GPU (confirmed)
 
 The argument-parser format string `OOOOO&O&|$O&O&:draw_view3d` (`.rodata 0x7ece2ec`) points to a `_PyArg_Parser` in
 `.data` (`0xa97a500`). Its only xref is in `FUN_0303bd80`, which is `pygpu_offscreen_draw_view3d`
 ([pseudocode](pseudocode/0x303bd80_pygpu_offscreen_draw_view3d.c), `source/blender/python/gpu/gpu_py_offscreen.cc:399`).
 It raises "GPU offscreen was freed" and "Nested off-screen drawing not supported" (:466), and draws through the
-viewport engine. The `gpu` module cannot be imported under `-b`: there is no GPU context. The SDK therefore uses:
+viewport engine.
+
+Correction to an earlier draft: `gpu` *can* be imported under `-b`. `BPyInit_gpu` has no background check
+(`source/blender/python/gpu/gpu_py_api.cc:113-147`). What fails is drawing. Observed on 5.2.2: creating a
+`GPUOffScreen` under `-b` raises "GPU functions for drawing requires the gpu module to be initialized. See
+gpu.init". 5.2 adds `gpu.init()` ("Initializes the GPU module for background use", `gpu_py_api.cc:41-70`). It calls
+`WM_init_gpu()` and raises `SystemError` when no GPU backend is available. On this machine (Radeon 890M),
+`gpu.init()` followed by `draw_view3d` succeeded under `-b`. GitHub's hosted runners have no GPU. The SDK therefore
+keeps background screenshots independent of the GPU:
 
 - GUI session: `GPUOffScreen.draw_view3d` of the first `VIEW_3D` region. This works when the window is not
   composited, unlike `screen.screenshot_area`.

@@ -1,6 +1,10 @@
 """In-Blender side of blender-agent. Started by the client as
 
-    blender [-b] --factory-startup --python-exit-code 1 --python bridge.py -- --socket PATH [--allow-exec]
+    blender [-b] --factory-startup --python-exit-code 1 --python bridge.py -- \
+        --socket PATH --workdir DIR [--allow-exec]
+
+``DIR`` is owned by the client, which removes it after Blender exits; checkpoints
+and screenshots are written there.
 
 It connects to the client's Unix socket and serves framed JSON-RPC requests.
 Every bpy access happens on Blender's main thread:
@@ -18,7 +22,6 @@ import queue
 import re
 import socket
 import sys
-import tempfile
 import threading
 import traceback
 from contextlib import redirect_stdout
@@ -36,26 +39,75 @@ class BridgeError(Exception):
 
 def _parse_args(argv):
     args = argv[argv.index("--") + 1:] if "--" in argv else []
-    socket_path, allow_exec = None, False
+    socket_path, workdir, allow_exec = None, None, False
     i = 0
     while i < len(args):
         if args[i] == "--socket":
             socket_path = args[i + 1]
+            i += 2
+        elif args[i] == "--workdir":
+            workdir = args[i + 1]
             i += 2
         elif args[i] == "--allow-exec":
             allow_exec = True
             i += 1
         else:
             raise SystemExit(f"blender-agent bridge: unknown argument {args[i]!r}")
-    if not socket_path:
-        raise SystemExit("blender-agent bridge: --socket PATH is required")
-    return socket_path, allow_exec
+    if not socket_path or not workdir:
+        raise SystemExit("blender-agent bridge: --socket PATH and --workdir DIR are required")
+    if not os.path.isdir(workdir):
+        raise SystemExit(f"blender-agent bridge: --workdir {workdir!r} is not a directory")
+    return socket_path, workdir, allow_exec
 
 
-SOCKET_PATH, ALLOW_EXEC = _parse_args(sys.argv)
+SOCKET_PATH, WORKDIR, ALLOW_EXEC = _parse_args(sys.argv)
 BACKGROUND = bpy.app.background
-CHECKPOINT_DIR = tempfile.mkdtemp(prefix="blender-agent-ckpt-")
-_checkpoints = {}
+_checkpoints = {}  # checkpoint id -> .blend path inside WORKDIR
+
+# ------------------------------------------------------------- exec policy
+#
+# Without --allow-exec the agent must not be able to run Python through the back
+# door of an operator. These operators run, install or eval() code (sources:
+# 5.2/scripts/startup/bl_operators/{wm,presets,userpref,node}.py,
+# bl_ui/generic_ui_list.py, editors/space_text/text_ops.cc, editors/space_script/).
+# This closes code execution inside Blender; it is not a filesystem sandbox.
+
+_EXEC_MODULES = {"script", "console", "preferences", "extensions"}
+_EXEC_OPERATORS = {
+    "text.run_script",        # runs a text block
+    "anim.keying_set_export", # writes a Python script
+    "wm.path_open",           # launches an external program
+    "wm.url_open",
+    "image.external_edit",
+}
+# String parameters that Python operators pass to eval()/exec().
+_EVAL_PARAMS = {"data_path", "data_path_iter", "data_path_item", "eval_string", "list_path",
+                "active_index_path", "prop_string"}
+
+
+def _python_operator_module(op):
+    cls = getattr(bpy.types, op.idname(), None)
+    module = getattr(cls, "__module__", "bpy.types")
+    return None if module == "bpy.types" else module
+
+
+def _exec_refusal(idname, op, rna, params):
+    """Reason this call would execute agent-controlled code, or None."""
+    module_name = idname.partition(".")[0]
+    if module_name in _EXEC_MODULES or idname in _EXEC_OPERATORS:
+        return f"{idname} runs or installs code"
+    py_module = _python_operator_module(op)
+    if py_module is not None:
+        names = {p.identifier for p in rna.properties}
+        if names & _EVAL_PARAMS:
+            return f"{idname} evaluates its {sorted(names & _EVAL_PARAMS)} parameters as Python"
+        if py_module.endswith("presets"):
+            return f"{idname} reads or writes Python preset scripts"
+        if "settings" in params and idname in {"node.add_node", "node.swap_node"}:
+            return f"{idname} evaluates settings values as Python"
+    if params.get("use_scripts"):
+        return f"{idname} with use_scripts=True would run scripts embedded in the file"
+    return None
 
 
 # --------------------------------------------------------------------- helpers
@@ -172,19 +224,30 @@ def object_info(name):
     return info
 
 
-def call_operator(idname, params=None, area_type=None, execution_context="EXEC_DEFAULT"):
+def _resolve_operator(idname):
     module_name, _, op_name = idname.partition(".")
-    module = getattr(bpy.ops, module_name, None)
-    if module is None or not op_name or op_name not in dir(module):
+    if module_name not in dir(bpy.ops) or op_name not in dir(getattr(bpy.ops, module_name)):
         raise BridgeError(f"unknown operator {idname!r}; use search_operators to find one")
-    op = getattr(module, op_name)
+    op = getattr(getattr(bpy.ops, module_name), op_name)
+    return op, op.get_rna_type()
+
+
+def call_operator(idname, params=None, area_type=None, execution_context="EXEC_DEFAULT"):
+    op, rna = _resolve_operator(idname)
+    params = dict(params or {})
+    if not ALLOW_EXEC:
+        reason = _exec_refusal(idname, op, rna, params)
+        if reason:
+            raise BridgeError(f"refused without allow_exec: {reason}")
+        if "use_scripts" in {p.identifier for p in rna.properties}:
+            params["use_scripts"] = False  # do not fall back to the auto-exec preference
     override = _area_override(area_type or "VIEW_3D")
     with bpy.context.temp_override(**override):
         if not op.poll():
             raise BridgeError(f"{idname}.poll() failed in the current context (mode={bpy.context.mode!r})")
         # The positional ``undo`` flag makes Python-invoked operators push an undo
         # step, which only exists in GUI sessions (``-b`` has no undo stack).
-        result = op(execution_context, not BACKGROUND, **(params or {}))
+        result = op(execution_context, not BACKGROUND, **params)
     return {"result": sorted(result)}
 
 
@@ -276,9 +339,11 @@ def _render_png(width, height):
         "filepath": render.filepath,
         "file_format": render.image_settings.file_format,
         "camera": scene.camera,
+        "cycles_device": scene.cycles.device,
+        "cycles_samples": scene.cycles.samples,
     }
     temp_cam = None
-    path = os.path.join(CHECKPOINT_DIR, "render.png")
+    path = os.path.join(WORKDIR, "render.png")
     try:
         if scene.camera is None:
             temp_cam = _temporary_camera(scene)
@@ -301,6 +366,8 @@ def _render_png(width, height):
         render.filepath = saved["filepath"]
         render.image_settings.file_format = saved["file_format"]
         scene.camera = saved["camera"]
+        scene.cycles.device = saved["cycles_device"]
+        scene.cycles.samples = saved["cycles_samples"]
         if temp_cam is not None:
             data = temp_cam.data
             bpy.data.objects.remove(temp_cam)
@@ -311,7 +378,7 @@ def _render_png(width, height):
 
 
 def _viewport_png(width, height):
-    import gpu  # only importable with a GPU context, i.e. not under -b
+    import gpu  # drawing needs a GPU context: the GUI's, or gpu.init() under -b
     import numpy as np
 
     override = _area_override("VIEW_3D")
@@ -330,7 +397,7 @@ def _viewport_png(width, height):
     buf.dimensions = w * h * 4
     pixels = np.asarray(buf, dtype=np.float32) / 255.0
     image = bpy.data.images.new("blender_agent_viewport", w, h, alpha=True)
-    path = os.path.join(CHECKPOINT_DIR, "viewport.png")
+    path = os.path.join(WORKDIR, "viewport.png")
     try:
         image.pixels.foreach_set(pixels.ravel())
         image.filepath_raw = path
@@ -347,7 +414,7 @@ def screenshot(width=640, height=480, source="auto"):
     if source not in {"auto", "render", "viewport"}:
         raise BridgeError("source must be 'auto', 'render' or 'viewport'")
     if source == "viewport" and BACKGROUND:
-        raise BridgeError("viewport capture needs a GUI session; background sessions can only render")
+        raise BridgeError("viewport capture is only supported in GUI sessions; background sessions render")
     if source == "viewport" or (source == "auto" and not BACKGROUND):
         png, meta = _viewport_png(width, height)
     else:
@@ -359,17 +426,24 @@ def screenshot(width=640, height=480, source="auto"):
 
 def checkpoint(label=None):
     key = f"ckpt{len(_checkpoints) + 1}"
-    path = os.path.join(CHECKPOINT_DIR, f"{key}.blend")
+    path = os.path.join(WORKDIR, f"{key}.blend")
     bpy.ops.wm.save_as_mainfile(filepath=path, copy=True, check_existing=False)
-    _checkpoints[key] = {"path": path, "label": label, "file": bpy.data.filepath or None}
+    _checkpoints[key] = path
     return {"checkpoint": key, "label": label}
 
 
+def _open_mainfile(path):
+    # Without allow_exec, scripts embedded in the file (registered text blocks,
+    # Python drivers) must not run, whatever the auto-exec preference says.
+    bpy.ops.wm.open_mainfile(filepath=path, load_ui=False, use_scripts=ALLOW_EXEC)
+
+
 def restore(checkpoint_id):
-    entry = _checkpoints.get(checkpoint_id)
-    if entry is None:
+    path = _checkpoints.get(checkpoint_id)
+    if path is None:
         raise BridgeError(f"unknown checkpoint {checkpoint_id!r}; known: {sorted(_checkpoints)}")
-    bpy.ops.wm.open_mainfile(filepath=entry["path"], load_ui=False)
+    _open_mainfile(path)
+    # bpy.data.filepath now names the checkpoint copy; save() always takes an explicit path.
     return {"restored": checkpoint_id, "objects": len(bpy.context.scene.objects)}
 
 
@@ -390,7 +464,7 @@ def save(filepath):
 def open_file(filepath):
     if not os.path.isfile(filepath):
         raise BridgeError(f"no such file: {filepath}")
-    bpy.ops.wm.open_mainfile(filepath=os.path.abspath(filepath), load_ui=False)
+    _open_mainfile(os.path.abspath(filepath))
     return {"file": bpy.data.filepath, "objects": len(bpy.context.scene.objects)}
 
 
@@ -398,10 +472,7 @@ def _iter_operators():
     for module_name in dir(bpy.ops):
         module = getattr(bpy.ops, module_name)
         for op_name in dir(module):
-            try:
-                yield f"{module_name}.{op_name}", getattr(module, op_name).get_rna_type()
-            except (AttributeError, KeyError, RuntimeError):
-                continue
+            yield f"{module_name}.{op_name}", getattr(module, op_name).get_rna_type()
 
 
 def search_operators(query, limit=20):
@@ -420,11 +491,7 @@ def search_operators(query, limit=20):
 
 
 def describe_operator(idname):
-    module_name, _, op_name = idname.partition(".")
-    module = getattr(bpy.ops, module_name, None)
-    if module is None or op_name not in dir(module):
-        raise BridgeError(f"unknown operator {idname!r}")
-    rna = getattr(module, op_name).get_rna_type()
+    _, rna = _resolve_operator(idname)
     props = []
     for p in rna.properties:
         if p.identifier == "rna_type":
@@ -459,18 +526,38 @@ HANDLERS = {
 
 # --------------------------------------------------------------------- serving
 
+def _error(request_id, type_name, message, tb=""):
+    return {"id": request_id, "ok": False, "error": {"type": type_name, "message": message, "traceback": tb}}
+
+
 def handle(request):
+    if not isinstance(request, dict) or not isinstance(request.get("params", {}), dict):
+        return _error(None, "BadRequest", "a request must be an object with an object 'params'")
     request_id = request.get("id")
     method = request.get("method")
     handler = HANDLERS.get(method)
     if handler is None:
-        return {"id": request_id, "ok": False,
-                "error": {"type": "UnknownMethod", "message": f"unknown method {method!r}", "traceback": ""}}
+        return _error(request_id, "UnknownMethod", f"unknown method {method!r}")
     try:
-        return {"id": request_id, "ok": True, "result": handler(**(request.get("params") or {}))}
+        return {"id": request_id, "ok": True, "result": handler(**request.get("params", {}))}
     except Exception as exc:  # every failure goes back to the agent, the bridge keeps serving
-        return {"id": request_id, "ok": False, "error": {
-            "type": type(exc).__name__, "message": str(exc), "traceback": traceback.format_exc()}}
+        return _error(request_id, type(exc).__name__, str(exc), traceback.format_exc())
+
+
+def _send_response(sock, response):
+    try:
+        frame = wire.encode_frame(response)
+    except wire.FrameTooLarge as exc:
+        frame = wire.encode_frame(_error(response.get("id"), "ResponseTooLarge", str(exc)))
+    sock.sendall(frame)
+
+
+def _next_request(sock):
+    """Next request, or a ready-made error response for a well-framed but invalid payload."""
+    try:
+        return wire.recv_frame(sock), None
+    except wire.InvalidPayload as exc:
+        return None, _error(None, "BadRequest", str(exc))
 
 
 def _connect():
@@ -485,13 +572,16 @@ def serve_background():
     try:
         while True:
             try:
-                request = wire.recv_frame(sock)
+                request, rejected = _next_request(sock)
             except wire.ConnectionClosed:
                 return
-            if request.get("method") == "quit":
+            if rejected is not None:
+                _send_response(sock, rejected)
+            elif isinstance(request, dict) and request.get("method") == "quit":
                 wire.send_frame(sock, {"id": request.get("id"), "ok": True, "result": {"quit": True}})
                 return
-            wire.send_frame(sock, handle(request))
+            else:
+                _send_response(sock, handle(request))
     finally:
         sock.close()
 
@@ -501,28 +591,40 @@ def serve_gui():
     inbox = queue.Queue()
 
     def reader():
+        # Only moves frames into the queue; all bpy access stays on the main thread.
         while True:
             try:
-                inbox.put(wire.recv_frame(sock))
+                inbox.put(_next_request(sock))
             except (wire.ProtocolError, OSError):
                 inbox.put(None)
                 return
 
     threading.Thread(target=reader, name="blender-agent-reader", daemon=True).start()
 
+    def shutdown():
+        sock.close()
+        bpy.ops.wm.quit_blender()
+        return None
+
     def drain():
         while True:
             try:
-                request = inbox.get_nowait()
+                item = inbox.get_nowait()
             except queue.Empty:
                 return 0.02
-            if request is None or request.get("method") == "quit":
-                if request is not None:
+            try:
+                if item is None:  # client gone: do not leave an orphaned Blender window
+                    return shutdown()
+                request, rejected = item
+                if rejected is not None:
+                    _send_response(sock, rejected)
+                elif isinstance(request, dict) and request.get("method") == "quit":
                     wire.send_frame(sock, {"id": request.get("id"), "ok": True, "result": {"quit": True}})
-                sock.close()
-                bpy.ops.wm.quit_blender()
-                return None
-            wire.send_frame(sock, handle(request))
+                    return shutdown()
+                else:
+                    _send_response(sock, handle(request))
+            except OSError:
+                return shutdown()
 
     bpy.app.timers.register(drain, first_interval=0.0, persistent=True)
 

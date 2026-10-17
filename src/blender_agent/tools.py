@@ -31,7 +31,8 @@ TOOLS = [
         "name": "screenshot",
         "description": "Look at the scene. Returns a PNG image. In background sessions this renders from the "
                        "scene camera (a temporary camera framing all visible objects is used when none exists); "
-                       "in GUI sessions it captures the 3D viewport.",
+                       "in GUI sessions it captures the 3D viewport, keeping the viewport's aspect ratio "
+                       "(width/height are then an upper bound).",
         "parameters": {"type": "object", "properties": {
             "width": {**_INT, "description": "Image width in pixels (default 640)."},
             "height": {**_INT, "description": "Image height in pixels (default 480)."},
@@ -117,7 +118,7 @@ def _selected(include_exec):
 
 
 def openai_tools(include_exec=False):
-    """Tool list for the OpenAI Chat Completions / Responses ``tools`` parameter."""
+    """Tool list for the OpenAI Chat Completions ``tools`` parameter (nested ``function`` shape)."""
     return [{"type": "function", "function": {"name": t["name"], "description": t["description"],
                                               "parameters": t["parameters"]}}
             for t in _selected(include_exec)]
@@ -132,25 +133,38 @@ def anthropic_tools(include_exec=False):
 def dispatch(session, name, arguments):
     """Execute one tool call.
 
-    ``arguments`` may be a dict or a JSON string (as OpenAI returns it). Returns
-    ``{"ok": bool, "result"|"error": ..., "image_png": bytes | None}``. Errors raised
-    inside Blender are returned, not raised, so the agent can read and correct them;
-    :class:`~blender_agent.client.SessionLost` still propagates.
+    ``arguments`` must be a dict or a JSON string encoding an object (as OpenAI returns
+    it). Returns ``{"ok": bool, "result"|"error": ..., "image_png": bytes | None}``.
+    Invalid tool calls and errors raised inside Blender are returned, not raised, so
+    the agent can read and correct them; :class:`~blender_agent.client.SessionLost`
+    still propagates.
     """
-    if name not in _BY_NAME:
-        return {"ok": False, "error": f"unknown tool {name!r}", "image_png": None}
+    tool = _BY_NAME.get(name)
+    if tool is None:
+        return _failed(f"unknown tool {name!r}")
     if isinstance(arguments, str):
-        arguments = json.loads(arguments or "{}")
-    arguments = dict(arguments or {})
+        try:
+            arguments = json.loads(arguments)
+        except json.JSONDecodeError as exc:
+            return _failed(f"arguments for {name} are not valid JSON: {exc}")
+    if not isinstance(arguments, dict):
+        return _failed(f"arguments for {name} must be a JSON object, got {type(arguments).__name__}")
+    schema = tool["parameters"]
+    unknown = sorted(set(arguments) - set(schema["properties"]))
+    missing = sorted(set(schema["required"]) - set(arguments))
+    if unknown or missing:
+        return _failed(f"bad arguments for {name}: unknown {unknown}, missing {missing}")
     try:
         if name == "screenshot":
             png, meta = session.screenshot(**arguments)
             return {"ok": True, "result": meta, "image_png": png}
-        return {"ok": True, "result": session.call(name, **arguments), "image_png": None}
+        return {"ok": True, "result": session.request(name, arguments), "image_png": None}
     except RemoteError as exc:
-        return {"ok": False, "error": str(exc), "image_png": None}
-    except TypeError as exc:
-        return {"ok": False, "error": f"bad arguments for {name}: {exc}", "image_png": None}
+        return _failed(str(exc))
+
+
+def _failed(message):
+    return {"ok": False, "error": message, "image_png": None}
 
 
 def result_text(outcome):

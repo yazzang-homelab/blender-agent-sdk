@@ -7,6 +7,7 @@ import socket
 import subprocess
 import tempfile
 import time
+import warnings
 from pathlib import Path
 
 from . import protocol as wire
@@ -81,65 +82,79 @@ class BlenderSession:
     # ------------------------------------------------------------- lifecycle
 
     def start(self):
-        if self._proc is not None:
+        if self._tmpdir is not None:
             raise BlenderAgentError("session already started")
-        self._tmpdir = tempfile.mkdtemp(prefix="blender-agent-")  # mkdtemp creates it with mode 0700
-        socket_path = os.path.join(self._tmpdir, "bridge.sock")
-        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        listener.bind(socket_path)
-        listener.listen(1)
-        listener.settimeout(0.5)
-
-        cmd = [self.blender]
-        if self.background:
-            cmd.append("-b")
-        if self.blend_file:
-            cmd.append(os.fspath(self.blend_file))
-        if self.factory_startup:
-            cmd.append("--factory-startup")
-        cmd += [*self.extra_args, "--python-exit-code", "1", "--python", str(BRIDGE_SCRIPT),
-                "--", "--socket", socket_path]
-        if self.allow_exec:
-            cmd.append("--allow-exec")
-
-        # Blender's stdout/stderr go straight to a file: nothing has to drain a pipe,
-        # so a chatty render can never block the process.
-        self.log_path = self.log_path or os.path.join(self._tmpdir, "blender.log")
-        self._log = open(self.log_path, "wb")
-        env = {**os.environ, **(self.env or {})}
-        self._proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=self._log,
-                                      stderr=subprocess.STDOUT, env=env)
+        # Everything the session creates lives in this 0700 directory (mkdtemp's mode):
+        # the socket, Blender's log, and the bridge's checkpoints and screenshots.
+        # _kill() removes it on every exit path, including startup failures.
+        self._tmpdir = tempfile.mkdtemp(prefix="blender-agent-")
+        listener = None
         try:
+            socket_path = os.path.join(self._tmpdir, "bridge.sock")
+            workdir = os.path.join(self._tmpdir, "work")
+            os.mkdir(workdir)
+            listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            listener.bind(socket_path)
+            listener.listen(1)
+            listener.settimeout(0.5)
+
+            cmd = [self.blender]
+            if self.background:
+                cmd.append("-b")
+            if not self.allow_exec:
+                cmd.append("--disable-autoexec")  # must precede the .blend to apply to it
+            if self.blend_file:
+                cmd.append(os.fspath(self.blend_file))
+            if self.factory_startup:
+                cmd.append("--factory-startup")
+            cmd += [*self.extra_args, "--python-exit-code", "1", "--python", str(BRIDGE_SCRIPT),
+                    "--", "--socket", socket_path, "--workdir", workdir]
+            if self.allow_exec:
+                cmd.append("--allow-exec")
+
+            # Blender's stdout/stderr go straight to a file: nothing has to drain a pipe,
+            # so a chatty render can never block the process.
+            self.log_path = self.log_path or os.path.join(self._tmpdir, "blender.log")
+            self._log = open(self.log_path, "wb")
+            env = {**os.environ, **(self.env or {})}
+            self._proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=self._log,
+                                          stderr=subprocess.STDOUT, env=env)
             self._sock = self._accept(listener)
+            self._sock.settimeout(self.startup_timeout)
+            try:
+                self.info = wire.recv_frame(self._sock)
+            except (OSError, wire.ProtocolError) as exc:
+                raise self._lost(f"bridge did not say hello: {exc}") from exc
         except BaseException:
             self._kill()
             raise
         finally:
-            listener.close()
-        self._sock.settimeout(self.startup_timeout)
-        try:
-            self.info = wire.recv_frame(self._sock)
-        except (OSError, wire.ProtocolError) as exc:
-            self._kill()
-            raise SessionLost(f"bridge did not say hello: {exc}\n{self.log_tail()}") from exc
+            if listener is not None:
+                listener.close()
         return self
+
+    def _lost(self, message):
+        """Kill the session and build a SessionLost carrying the tail of Blender's log."""
+        tail = self.log_tail()  # read before _kill() deletes the default log location
+        self._kill()
+        return SessionLost(f"{message}\n--- Blender log (tail) ---\n{tail}" if tail else message)
 
     def _accept(self, listener):
         deadline = time.monotonic() + self.startup_timeout
         while time.monotonic() < deadline:
             if self._proc.poll() is not None:
-                raise SessionLost(f"Blender exited with code {self._proc.returncode} during startup\n{self.log_tail()}")
+                raise self._lost(f"Blender exited with code {self._proc.returncode} during startup")
             try:
                 conn, _ = listener.accept()
                 return conn
             except socket.timeout:
                 continue
-        raise SessionLost(f"Blender did not connect within {self.startup_timeout}s\n{self.log_tail()}")
+        raise self._lost(f"Blender did not connect within {self.startup_timeout}s")
 
     def close(self):
-        if self._proc is None:
+        if self._tmpdir is None:
             return
-        if self._sock is not None and self._proc.poll() is None:
+        if self._sock is not None and self._proc is not None and self._proc.poll() is None:
             try:
                 self._request("quit", {}, timeout=10)
                 self._proc.wait(timeout=30)
@@ -158,8 +173,11 @@ class BlenderSession:
             self._log.close()
             self._log = None
         if self._tmpdir is not None:
-            shutil.rmtree(self._tmpdir, ignore_errors=True)
-            self._tmpdir = None
+            tmpdir, self._tmpdir = self._tmpdir, None
+            try:
+                shutil.rmtree(tmpdir)
+            except OSError as exc:  # report, but never mask the error that brought us here
+                warnings.warn(f"blender-agent could not remove {tmpdir}: {exc}", ResourceWarning, stacklevel=2)
 
     def __enter__(self):
         return self.start()
@@ -186,30 +204,43 @@ class BlenderSession:
 
     def _request(self, method, params, timeout=None):
         if not self.alive:
+            if self._tmpdir is not None:  # Blender died between requests
+                raise self._lost(f"Blender is no longer running (exit code {self.returncode})")
             raise SessionLost("session is not running")
         self._next_id += 1
         request_id = self._next_id
+        try:
+            frame = wire.encode_frame({"id": request_id, "method": method, "params": params})
+        except wire.FrameTooLarge as exc:
+            raise BlenderAgentError(f"{method} request not sent: {exc}") from exc  # session unaffected
         self._sock.settimeout(timeout or self.timeout)
         try:
-            wire.send_frame(self._sock, {"id": request_id, "method": method, "params": params})
+            self._sock.sendall(frame)
             response = wire.recv_frame(self._sock)
         except socket.timeout as exc:
-            self._kill()
-            raise SessionLost(f"{method} timed out after {timeout or self.timeout}s; Blender was killed") from exc
+            raise self._lost(f"{method} timed out after {timeout or self.timeout}s; Blender was killed") from exc
         except (OSError, wire.ProtocolError) as exc:
+            if self._proc is not None:
+                try:  # give a crashing Blender a moment so its exit code is known
+                    self._proc.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    pass
             code = self._proc.poll() if self._proc else None
-            self._kill()
-            raise SessionLost(f"connection lost during {method} (exit code {code}): {exc}") from exc
-        if response.get("id") != request_id:
-            self._kill()
-            raise SessionLost(f"response id {response.get('id')} does not match request {request_id}")
+            raise self._lost(f"connection lost during {method} (exit code {code}): {exc}") from exc
+        if not isinstance(response, dict) or response.get("id") != request_id:
+            got = response.get("id") if isinstance(response, dict) else response
+            raise self._lost(f"response id {got!r} does not match request {request_id}")
         if not response.get("ok"):
             err = response.get("error") or {}
             raise RemoteError(err.get("type", "Error"), err.get("message", ""), err.get("traceback", ""))
         return response.get("result")
 
+    def request(self, method, params, timeout=None):
+        """Invoke a bridge method with a params dict."""
+        return self._request(method, params, timeout=timeout)
+
     def call(self, method, timeout=None, **params):
-        """Invoke any bridge method by name."""
+        """Invoke a bridge method with keyword params."""
         return self._request(method, params, timeout=timeout)
 
     # ------------------------------------------------------------- observe

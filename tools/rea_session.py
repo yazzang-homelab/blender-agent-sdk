@@ -1,7 +1,7 @@
 """Run many REA operations against one live Ghidra analysis.
 
 Each ``rea <command>`` CLI invocation imports and auto-analyzes the target from
-scratch (70 minutes for the 167 MB Blender 5.2.2 binary on a Ryzen AI 9 HX 370).
+scratch (70 minutes for the 174 MB (166 MiB) Blender 5.2.2 binary on a Ryzen AI 9 HX 370).
 REA's stdio server keeps one analysis session open across calls, so this script
 starts ``rea --mcp`` once and feeds it tool calls.
 

@@ -24,10 +24,18 @@ class ConnectionClosed(ProtocolError):
     """The peer closed the connection, possibly mid-frame."""
 
 
+class FrameTooLarge(ProtocolError):
+    """A frame exceeds MAX_FRAME_BYTES. Incoming: the stream cannot be resynchronised."""
+
+
+class InvalidPayload(ProtocolError):
+    """A complete frame whose payload is not UTF-8 JSON. The stream stays in sync."""
+
+
 def encode_frame(message):
     payload = json.dumps(message, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     if len(payload) > MAX_FRAME_BYTES:
-        raise ProtocolError(f"frame of {len(payload)} bytes exceeds MAX_FRAME_BYTES={MAX_FRAME_BYTES}")
+        raise FrameTooLarge(f"frame of {len(payload)} bytes exceeds MAX_FRAME_BYTES={MAX_FRAME_BYTES}")
     return _HEADER.pack(len(payload)) + payload
 
 
@@ -56,17 +64,19 @@ def recv_frame(sock):
         header += _recv_exact(sock, _HEADER.size - len(header))
     (size,) = _HEADER.unpack(header)
     if size > MAX_FRAME_BYTES:
-        raise ProtocolError(f"incoming frame of {size} bytes exceeds MAX_FRAME_BYTES={MAX_FRAME_BYTES}")
+        raise FrameTooLarge(f"incoming frame of {size} bytes exceeds MAX_FRAME_BYTES={MAX_FRAME_BYTES}")
     payload = _recv_exact(sock, size)
     try:
         return json.loads(payload.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ProtocolError(f"invalid JSON payload: {exc}") from exc
+        raise InvalidPayload(f"invalid JSON payload: {exc}") from exc
 
 
 __all__ = [
     "MAX_FRAME_BYTES",
     "ConnectionClosed",
+    "FrameTooLarge",
+    "InvalidPayload",
     "ProtocolError",
     "encode_frame",
     "recv_frame",
