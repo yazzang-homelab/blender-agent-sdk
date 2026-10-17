@@ -1,7 +1,7 @@
 """In-Blender side of blender-agent. Started by the client as
 
-    blender [-b] --factory-startup --python-exit-code 1 --python bridge.py -- \
-        --socket PATH --workdir DIR [--allow-exec]
+    blender [-b] [--disable-autoexec] [FILE.blend] [--factory-startup] [EXTRA_ARGS...] \
+        --python-exit-code 1 --python bridge.py -- --socket PATH --workdir DIR [--allow-exec]
 
 ``DIR`` is owned by the client, which removes it after Blender exits; checkpoints
 and screenshots are written there.
@@ -80,6 +80,8 @@ _EXEC_OPERATORS = {
     "wm.url_open",
     "image.external_edit",
     "asset.open_containing_blend_file",  # starts another Blender with the user's auto-exec preference
+    # eval()s every F-Curve and driver data_path (_animsys_refactor), and the agent can set those strings.
+    "anim.update_animated_transform_constraints",
 }
 # String parameters that Python operators pass to eval()/exec().
 _EVAL_PARAMS = {"data_path", "data_path_iter", "data_path_item", "eval_string", "list_path",
@@ -140,6 +142,8 @@ def _json_value(value):
         return {"struct": type(value).__name__, "path": repr(value)}
     if isinstance(value, set):
         return sorted(value)
+    if hasattr(value, "keys") and hasattr(value, "values"):  # dict, IDPropertyGroup
+        return {str(k): _json_value(v) for k, v in value.items()}
     try:
         return [_json_value(v) for v in value]
     except TypeError:
@@ -248,7 +252,9 @@ def call_operator(idname, params=None, area_type=None, execution_context="EXEC_D
             raise BridgeError(f"refused without allow_exec: {reason}")
         for flag in ("use_scripts", "use_trusted"):
             if rna.properties.get(flag) is not None:
-                params[flag] = False  # do not fall back to the auto-exec preference
+                # use_scripts: do not fall back to the auto-exec preference. use_trusted: GUI
+                # sessions re-use an operator's last properties, so pin the default explicitly.
+                params[flag] = False
     override = _area_override(area_type or "VIEW_3D")
     with bpy.context.temp_override(**override):
         if not op.poll():

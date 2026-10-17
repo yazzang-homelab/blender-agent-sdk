@@ -135,9 +135,9 @@ def dispatch(session, name, arguments):
 
     ``arguments`` must be a dict or a JSON string encoding an object (as OpenAI returns
     it). Returns ``{"ok": bool, "result"|"error": ..., "image_png": bytes | None}``.
-    Invalid tool calls and errors raised inside Blender are returned, not raised, so
-    the agent can read and correct them; :class:`~blender_agent.client.SessionLost`
-    still propagates.
+    Invalid tool calls, oversized requests (:class:`~blender_agent.client.RequestTooLarge`)
+    and errors raised inside Blender are returned, not raised, so the agent can read and
+    correct them; :class:`~blender_agent.client.SessionLost` still propagates.
     """
     tool = _BY_NAME.get(name)
     if tool is None:

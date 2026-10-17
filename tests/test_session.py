@@ -1,3 +1,5 @@
+import os
+
 import pytest
 
 from blender_agent import RemoteError
@@ -126,6 +128,23 @@ def test_undo_is_refused_in_background(session):
 def test_exec_python_is_disabled_by_default(session):
     with pytest.raises(RemoteError, match="exec_python is disabled"):
         session.exec_python("print('hi')")
+
+
+def test_exec_python_returns_mappings_as_objects(exec_session):
+    out = exec_session.exec_python(
+        "bpy.context.scene['meta'] = {'n': 1, 'tags': {'a': 'b'}}\n"
+        "result = {'plain': {'x': [1, 2]}, 'idprops': bpy.context.scene['meta']}")
+    assert out["result"] == {"plain": {"x": [1, 2]}, "idprops": {"n": 1, "tags": {"a": "b"}}}
+
+
+def test_session_can_be_restarted_after_close(blender_bin):
+    from blender_agent import BlenderSession
+
+    bl = BlenderSession(blender_bin)
+    for _ in range(2):
+        bl.start()
+        assert bl.ping()["pong"] is True and os.path.exists(bl.log_path)
+        bl.close()
 
 
 def test_exec_python_when_allowed(exec_session):

@@ -75,7 +75,8 @@ class BlenderSession:
         self.factory_startup = factory_startup
         self.extra_args = list(extra_args)
         self.env = env
-        self.log_path = log_path
+        self._log_path_arg = log_path
+        self.log_path = None
         self.info = None
         self._proc = None
         self._sock = None
@@ -118,7 +119,7 @@ class BlenderSession:
 
             # Blender's stdout/stderr go straight to a file: nothing has to drain a pipe,
             # so a chatty render can never block the process.
-            self.log_path = self.log_path or os.path.join(self._tmpdir, "blender.log")
+            self.log_path = self._log_path_arg or os.path.join(self._tmpdir, "blender.log")
             self._log = open(self.log_path, "wb")
             env = {**os.environ, **(self.env or {})}
             self._proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=self._log,

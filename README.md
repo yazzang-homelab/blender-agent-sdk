@@ -107,7 +107,7 @@ your agent ──dispatch()──► BlenderSession ──Unix socket (0700 dir)
 ```
 
 The process is launched as
-`blender [-b] --factory-startup [--disable-autoexec] [file.blend] --python-exit-code 1 --python bridge.py -- --socket <path> --workdir <dir> [--allow-exec]`.
+`blender [-b] [--disable-autoexec] [file.blend] [--factory-startup] [extra_args...] --python-exit-code 1 --python bridge.py -- --socket <path> --workdir <dir> [--allow-exec]`.
 The socket, Blender's log, renders and checkpoints all live in one private 0700 directory that the client
 removes on every exit path (close, timeout, crash, failed start).
 
@@ -122,6 +122,8 @@ Python inside Blender:
   `wm.path_open`, `image.external_edit`), and any operator taking a Python-evaluated parameter
   (`data_path`, `eval_string`, …, as in `wm.context_*`) or a `settings` collection of `NodeSetting`
   values (`node.add_node`, `node.swap_node` and the zone, group and bundle adders: 12 operators in 5.2.2);
+- operators that write or re-evaluate agent-controlled Python: `anim.keying_set_export` (writes a `.py`) and
+  `anim.update_animated_transform_constraints` (`eval()`s every F-Curve and driver `data_path`);
 - operators that start another Blender which could run scripts: `asset.open_containing_blend_file`, and
   `wm.previews_batch_generate`/`wm.previews_batch_clear` with `use_trusted=True` (forced to `False` otherwise);
 - embedded scripts in `.blend` files: Blender starts with `--disable-autoexec`, every file load
@@ -130,7 +132,12 @@ Python inside Blender:
 
 This closes code execution *inside the Blender process*. It is **not** a filesystem sandbox: ordinary
 operators can still read and write files the user can reach (`save`, `wm.save_as_mainfile`, image and
-mesh import/export). Run untrusted agents in a container or VM with only the files they need.
+mesh import/export), including Python text blocks saved with `text.save` in GUI sessions. Run untrusted
+agents in a container or VM with only the files they need.
+
+The guarantee covers what an agent can reach through tool calls. Constructor arguments are the caller's:
+`extra_args` (e.g. `--enable-autoexec`, `--python-expr`) and `factory_startup=False` (user add-ons and
+startup file) are passed to Blender unchecked.
 
 ## Why not MCP?
 

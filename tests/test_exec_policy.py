@@ -68,14 +68,23 @@ def test_ordinary_operators_still_work(session):
 AUTOEXEC_ON = ["--enable-autoexec"]
 
 
-def test_file_loads_do_not_run_embedded_scripts(blender_bin, session, tmp_path):
+_LOADERS = {
+    "wm.open_mainfile": lambda bl, blend: bl.call_operator("wm.open_mainfile", {"filepath": str(blend)}),
+    "open_file": lambda bl, blend: bl.open_file(blend),
+    # restore re-opens the checkpoint written from the planted file's contents
+    "restore": lambda bl, blend: (bl.open_file(blend), bl.restore(bl.checkpoint())),
+}
+
+
+@pytest.mark.parametrize("loader", sorted(_LOADERS))
+def test_file_loads_do_not_run_embedded_scripts(blender_bin, session, tmp_path, loader):
+    # A fresh session per load path: Blender clears its auto-exec flag after a load with
+    # use_scripts=False, which would let a later load pass even without the bridge's forcing.
     marker, blend = tmp_path / "marker", tmp_path / "planted.blend"
     _plant_registered_text(session, marker, blend)
     with BlenderSession(blender_bin, extra_args=AUTOEXEC_ON) as bl:
-        bl.call_operator("wm.open_mainfile", {"filepath": str(blend)})  # use_scripts omitted
+        _LOADERS[loader](bl, blend)
         assert bl.get_property("texts", "Text", "use_module") is True  # the planted file did load
-        bl.open_file(blend)
-        bl.restore(bl.checkpoint())
     assert not marker.exists()
 
 
@@ -103,6 +112,23 @@ def test_disable_autoexec_precedes_the_launch_file(blender_bin, monkeypatch):
     denied, allowed = seen
     assert denied.index("--disable-autoexec") < denied.index("scene.blend")
     assert "--disable-autoexec" not in allowed
+
+
+def test_animation_path_update_cannot_eval_planted_data_path(blender_bin, tmp_path):
+    marker = tmp_path / "marker"
+    payload = f"location, open({str(marker)!r}, 'w').write('ran')"
+    for allow_exec in (False, True):
+        with BlenderSession(blender_bin, allow_exec=allow_exec) as bl:
+            bl.call_operator("anim.keyframe_insert_by_name", {"type": "Location"})
+            bl.set_property("actions", "CubeAction", "layers[0].strips[0].channelbags[0].fcurves[0].data_path", payload)
+            if allow_exec:  # positive control: the operator does eval() the planted path
+                with pytest.raises(RemoteError):  # the mangled path fails after eval() ran it
+                    bl.call_operator("anim.update_animated_transform_constraints")
+                assert marker.read_text() == "ran"
+            else:
+                with pytest.raises(RemoteError, match="refused without allow_exec"):
+                    bl.call_operator("anim.update_animated_transform_constraints")
+                assert not marker.exists()
 
 
 def test_preview_generation_cannot_run_embedded_scripts(session, tmp_path):
