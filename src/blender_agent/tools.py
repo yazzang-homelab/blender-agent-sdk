@@ -1,4 +1,4 @@
-"""Agent tool definitions for function-calling LLM APIs (no MCP).
+"""Agent tool definitions for function-calling LLM APIs (also served over MCP by mcp_server).
 
 ``TOOLS`` is the single source of truth. ``openai_tools()`` and
 ``anthropic_tools()`` render it for the respective APIs, and ``dispatch()``

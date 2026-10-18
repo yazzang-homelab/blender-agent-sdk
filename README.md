@@ -1,6 +1,7 @@
 # blender-agent-sdk
 
-Drive Blender from AI agents with a plain Python SDK — **no MCP server, no addon to install**.
+Drive Blender from AI agents with a plain Python SDK — **no addon to install**. The same tools are also
+available as an MCP server and as a command line for building a scene over a conversation.
 
 `BlenderSession` launches Blender (headless `-b` or with its GUI), injects a small bridge with
 `--python`, and talks to it over a private Unix socket (loopback TCP with a per-session token on
@@ -35,7 +36,7 @@ finds it through `BlenderSession(blender=...)`, `$BLENDER`, `PATH`, or the defau
 (`/Applications/Blender.app` on macOS, `C:\Program Files\Blender Foundation\Blender *` on Windows).
 
 ```bash
-pip install https://github.com/yazzang-homelab/blender-agent-sdk/releases/download/v0.1.0/blender_agent_sdk-0.1.0-py3-none-any.whl
+pip install https://github.com/yazzang-homelab/blender-agent-sdk/releases/download/v0.2.0/blender_agent_sdk-0.2.0-py3-none-any.whl
 # or the development version
 pip install git+https://github.com/yazzang-homelab/blender-agent-sdk
 ```
@@ -45,6 +46,46 @@ pip install git+https://github.com/yazzang-homelab/blender-agent-sdk
 | Linux | Unix socket in a 0700 directory | yes (X11/Wayland, `xvfb-run` headless) |
 | macOS | Unix socket in a 0700 directory | untested (hosted runners have no GPU display) |
 | Windows | `127.0.0.1` TCP; Blender must present a 256-bit token passed through its environment | untested (hosted runners have no GPU display) |
+
+## Work on a scene in a conversation
+
+A script's `BlenderSession` ends with the script. To build something over many turns (from Claude Code,
+GJC, Cursor, or by hand) keep one Blender alive with either of these; both use the SDK's tools and exec
+policy unchanged.
+
+**MCP server** (stdio, standard library only):
+
+```bash
+claude mcp add blender -- blender-agent mcp --http 8765                    # Claude Code
+gjc mcp add blender --command blender-agent --arg mcp --arg --http --arg 8765   # GJC
+```
+
+Besides the SDK tools the server offers `show` (render, save to the gallery, return the image),
+`gallery` (where the user can look) and `reset_scene`.
+
+**Background session + CLI**, for agents without MCP or for typing commands yourself:
+
+```bash
+blender-agent start --name tree --http 8765        # Blender keeps running between commands
+blender-agent call --name tree call_operator '{"idname": "mesh.primitive_cone_add", "params": {"depth": 3}}'
+blender-agent show --name tree --label "trunk"    # render, record, draw it in the terminal
+blender-agent call --name tree checkpoint '{"label": "v1"}'
+blender-agent stop --name tree
+```
+
+### Seeing what the agent did
+
+| channel | how |
+|---|---|
+| terminal | `show`/`call --preview` draw the image inline: kitty graphics (kitty, Ghostty, WezTerm), iTerm2 images, or 24-bit half blocks anywhere else, tmux and SSH included |
+| live terminal pane | `blender-agent watch [DIR]` redraws the newest image as it arrives; put it in a tmux split next to the agent |
+| model | MCP `show`/`screenshot` results carry the PNG, so the agent checks its own work |
+| gallery folder | every screenshot goes to `shots/NNNN.png`, `latest.png`, `history.jsonl` and a self-reloading `index.html` (`--out DIR`; default `./blender-agent-out`) |
+| browser | `--http PORT` serves the gallery (`--http-bind 0.0.0.0` for phones and other machines; `blender-agent gallery DIR` serves any folder) |
+| Blender itself | `--gui` opens Blender's window; you watch every operator happen and can take over |
+
+The CLI keeps per-session state under `~/.cache/blender-agent` (`%LOCALAPPDATA%` on Windows): a local
+socket or named pipe plus a random key that every request must present.
 
 ## Plug it into an agent
 
@@ -166,11 +207,12 @@ The guarantee covers what an agent can reach through tool calls. Constructor arg
 startup file) are passed to Blender unchecked, and in GUI sessions a `blend_file` given at launch
 opens with its own UI. Open untrusted files with `open_file` instead.
 
-## Why not MCP?
+## SDK first, MCP optional
 
-MCP needs a separate server process, an addon installed into the user's Blender, and a host that
-speaks MCP. Here the "server" is a child process you own: it can be headless, sandboxed per task, run
-in CI, and its tools drop into any function-calling loop. Prior art for comparison:
+Typical Blender MCP servers need an addon installed into the user's Blender and a host that speaks MCP.
+Here the core is a child process you own: it can be headless, sandboxed per task, run in CI, and its
+tools drop into any function-calling loop. `blender-agent mcp` is a thin adapter over the same tools for
+hosts that speak MCP. Prior art for comparison:
 [ahujasid/blender-mcp](https://github.com/ahujasid/blender-mcp) (MCP addon, GUI only) and
 [ptrthomas/blender-agent](https://github.com/ptrthomas/blender-agent) (HTTP `exec` endpoint, no SDK).
 
@@ -220,7 +262,7 @@ AI 에이전트가 **MCP 없이** 순수 Python SDK로 Blender를 조작(compute
   전용 Unix 소켓(0700 디렉터리, Windows는 세션 토큰으로 인증하는 127.0.0.1 TCP)과 4바이트 길이 접두 JSON으로
   통신합니다. 애드온 설치가 필요 없습니다.
 - Linux x64, Windows x64, macOS arm64에서 Blender 5.2.2로 전체 테스트를 CI에서 돌립니다(GUI 테스트는 Linux).
-  설치: `pip install https://github.com/yazzang-homelab/blender-agent-sdk/releases/download/v0.1.0/blender_agent_sdk-0.1.0-py3-none-any.whl`
+  설치: `pip install https://github.com/yazzang-homelab/blender-agent-sdk/releases/download/v0.2.0/blender_agent_sdk-0.2.0-py3-none-any.whl`
 - 관찰(`scene_graph`, `object_info`, `screenshot`) · 탐색(`search_operators`, `describe_operator`) ·
   조작(`call_operator`, `set_property`, `checkpoint`/`restore`, `save`) 도구를 OpenAI/Anthropic
   function-calling 스키마로 제공하고 `dispatch()` 한 줄로 실행합니다.
@@ -229,6 +271,10 @@ AI 에이전트가 **MCP 없이** 순수 Python SDK로 Blender를 조작(compute
   파일시스템 샌드박스는 아니므로 신뢰할 수 없는 에이전트는 컨테이너에서 돌리십시오.
 - Blender 내부 예외는 `RemoteError`(타입·메시지·원격 traceback)로 돌아오고 세션은 유지됩니다.
   멈추거나 죽으면 타임아웃 후 프로세스를 정리하고 `SessionLost`를 던집니다.
+- 대화하면서 장면을 완성하려면 Blender를 계속 살려 두는 `blender-agent mcp`(Claude Code·GJC 등 MCP 호스트) 또는
+  `blender-agent start/call/show/stop`(CLI)을 씁니다. 결과는 터미널 인라인 이미지(kitty·iTerm2·하프블록),
+  tmux 옆 창의 `blender-agent watch`, 갤러리 폴더(`index.html` 자동 새로고침), `--http` 웹(내부망은
+  `--http-bind 0.0.0.0`), `--gui` Blender 창 실시간 보기로 확인합니다.
 - 헤드리스(`-b`)에는 undo 스택이 없어 `checkpoint`/`restore`(.blend 스냅샷)를 쓰고, GUI 세션에서는
   `ed.undo`와 뷰포트 오프스크린 캡처를 씁니다.
 - 설계 근거는 [REA](https://github.com/morluto/rea)(Ghidra 프로바이더)로 Blender 5.2.2 바이너리 자체를

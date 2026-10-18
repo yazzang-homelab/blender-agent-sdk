@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "blender-agent-sdk"
-version = "0.1.0"
-description = "Drive Blender from AI agents through a plain Python SDK (no MCP), backed by a reverse-engineered map of Blender 5.2"
+version = "0.2.0"
+description = "Drive Blender from AI agents through a plain Python SDK (with an optional MCP server), backed by a reverse-engineered map of Blender 5.2"
 readme = "README.md"
 license = "GPL-3.0-or-later"
 license-files = ["LICENSE"]
@@ -21,8 +21,11 @@ classifiers = [
 ]
 dependencies = []
 
+[project.scripts]
+blender-agent = "blender_agent.cli:main"
+
 [project.optional-dependencies]
-test = ["pytest>=8"]
+test = ["pytest>=8", "mcp>=1.9"]  # mcp: the official client, to test interoperability
 openai = ["openai>=1.40"]
 anthropic = ["anthropic>=0.40"]
 
