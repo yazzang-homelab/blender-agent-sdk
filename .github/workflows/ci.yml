@@ -82,6 +82,7 @@ jobs:
       - name: Tests (background; GUI under Xvfb on Linux)
         run: |
           "$BLENDER" --version | head -1
+          python -c "import socket; print('transport:', 'unix' if hasattr(socket, 'AF_UNIX') else 'tcp+token')"
           if [ "${{ runner.os }}" = Linux ]; then
             # The GUI test must run here, never skip.
             BLENDER_AGENT_REQUIRE_GUI=1 xvfb-run -a -s "-screen 0 1280x1024x24" pytest -v
