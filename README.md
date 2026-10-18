@@ -3,7 +3,8 @@
 Drive Blender from AI agents with a plain Python SDK — **no MCP server, no addon to install**.
 
 `BlenderSession` launches Blender (headless `-b` or with its GUI), injects a small bridge with
-`--python`, and talks to it over a private Unix socket. On top of that sit computer-use style
+`--python`, and talks to it over a private Unix socket (loopback TCP with a per-session token on
+Windows). Linux, Windows and macOS. On top of that sit computer-use style
 tools — *observe* (scene graph, object state, screenshots), *discover* (search 2,498 operators) and
 *act* (operators, RNA properties, checkpoints) — exported as ready-made OpenAI and Anthropic
 function-calling schemas with a one-line `dispatch()`.
@@ -27,13 +28,23 @@ with BlenderSession() as bl:                      # blender -b, factory startup
 
 ## Install
 
-Requires Python ≥ 3.10 and a Blender install. Tested on **Blender 5.2.2 LTS, Linux x64** only; other
-versions and platforms are untested. Blender itself is not
-bundled; point the SDK at it with `BLENDER=/path/to/blender`, `BlenderSession(blender=...)`, or `PATH`.
+Requires Python ≥ 3.10 and Blender. CI runs the full suite against **Blender 5.2.2** on Linux x64
+(including the GUI test under Xvfb), Windows x64 and macOS arm64; other Blender versions are untested.
+The wheel is pure Python, so one file covers every platform. Blender itself is not bundled; the SDK
+finds it through `BlenderSession(blender=...)`, `$BLENDER`, `PATH`, or the default install location
+(`/Applications/Blender.app` on macOS, `C:\Program Files\Blender Foundation\Blender *` on Windows).
 
 ```bash
+pip install https://github.com/yazzang-homelab/blender-agent-sdk/releases/download/v0.1.0/blender_agent_sdk-0.1.0-py3-none-any.whl
+# or the development version
 pip install git+https://github.com/yazzang-homelab/blender-agent-sdk
 ```
+
+| platform | transport | GUI sessions |
+|---|---|---|
+| Linux | Unix socket in a 0700 directory | yes (X11/Wayland, `xvfb-run` headless) |
+| macOS | Unix socket in a 0700 directory | untested (hosted runners have no GPU display) |
+| Windows | `127.0.0.1` TCP; Blender must present a 256-bit token passed through its environment | untested (hosted runners have no GPU display) |
 
 ## Plug it into an agent
 
@@ -101,15 +112,18 @@ Set `BLENDER_AGENT_RENDER_ENGINE=CYCLES` on machines without a GPU (CI does); Cy
 ## How it works
 
 ```
-your agent ──dispatch()──► BlenderSession ──Unix socket (0700 dir), 4-byte length + JSON──► bridge.py in Blender
+your agent ──dispatch()──► BlenderSession ──Unix socket or token-checked loopback TCP, 4-byte length + JSON──► bridge.py in Blender
                               │  owns the process, timeouts,                                 │ bpy on the main thread
                               │  Blender log → file (never blocks)                           │
 ```
 
 The process is launched as
-`blender [-b] [--disable-autoexec] [file.blend] [--factory-startup] [extra_args...] --python-exit-code 1 --python bridge.py -- --socket <path> --workdir <dir> [--allow-exec]`.
-The socket, Blender's log, renders and checkpoints all live in one private 0700 directory that the client
-removes on every exit path (close, timeout, crash, failed start).
+`blender [-b] [--disable-autoexec] [file.blend] [--factory-startup] [extra_args...] --python-exit-code 1 --python bridge.py -- --connect <address> --workdir <dir> [--allow-exec]`.
+`<address>` is the socket path, or `tcp:127.0.0.1:<port>` on Windows, where CPython has no `AF_UNIX`.
+The bridge's first frame carries a random token the client put in Blender's environment, and the client
+drops any peer without it, so another local process cannot pose as Blender on the loopback port.
+The socket, Blender's log, renders and checkpoints all live in one private directory (0700; the user's
+own `%TEMP%` on Windows) that the client removes on every exit path (close, timeout, crash, failed start).
 
 ## Trust model
 
@@ -203,7 +217,10 @@ Blender binaries are never redistributed here.
 AI 에이전트가 **MCP 없이** 순수 Python SDK로 Blender를 조작(computer-use)하게 해 주는 라이브러리입니다.
 
 - `BlenderSession`이 Blender를 자식 프로세스로 띄우고(`-b` 헤드리스 또는 GUI), `--python`으로 브리지를 주입해
-  전용 Unix 소켓(0700 디렉터리, 4바이트 길이 접두 JSON)으로 통신합니다. 애드온 설치가 필요 없습니다.
+  전용 Unix 소켓(0700 디렉터리, Windows는 세션 토큰으로 인증하는 127.0.0.1 TCP)과 4바이트 길이 접두 JSON으로
+  통신합니다. 애드온 설치가 필요 없습니다.
+- Linux x64, Windows x64, macOS arm64에서 Blender 5.2.2로 전체 테스트를 CI에서 돌립니다(GUI 테스트는 Linux).
+  설치: `pip install https://github.com/yazzang-homelab/blender-agent-sdk/releases/download/v0.1.0/blender_agent_sdk-0.1.0-py3-none-any.whl`
 - 관찰(`scene_graph`, `object_info`, `screenshot`) · 탐색(`search_operators`, `describe_operator`) ·
   조작(`call_operator`, `set_property`, `checkpoint`/`restore`, `save`) 도구를 OpenAI/Anthropic
   function-calling 스키마로 제공하고 `dispatch()` 한 줄로 실행합니다.

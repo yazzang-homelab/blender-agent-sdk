@@ -176,3 +176,16 @@ def test_save_and_open(session, tmp_path):
     session.call_operator("object.delete")
     session.open_file(target)
     assert "Cone" in _names(session)
+
+
+def test_datablock_pointers_are_set_by_name(session):
+    session.call_operator("object.camera_add")
+    camera = session.scene_graph()["active_object"]
+    assert session.set_property("scenes", "Scene", "camera", camera) == {"id_type": "Object", "name": camera}
+    session.call_operator("mesh.primitive_cube_add", {"location": [0, 0, 3]})
+    cube = session.scene_graph()["active_object"]
+    session.set_property("objects", cube, "parent", camera)
+    assert session.object_info(cube)["parent"] == camera
+    with pytest.raises(RemoteError, match="no Object named 'Nope'"):
+        session.set_property("scenes", "Scene", "camera", "Nope")
+    assert session.set_property("objects", cube, "name", "Box") == "Box"  # plain strings stay strings

@@ -342,6 +342,25 @@ def _split_path(path):
     return "", path
 
 
+def _id_by_name(owner, attr, value):
+    """A datablock pointer (Scene.camera, Object.parent, ...) is set by the datablock's name."""
+    prop = owner.bl_rna.properties.get(attr)
+    if prop is None or prop.type != "POINTER":
+        return value
+    cls = getattr(bpy.types, prop.fixed_type.identifier, None)
+    if cls is None or not issubclass(cls, bpy.types.ID):
+        return value
+    if issubclass(cls, bpy.types.Text) and not ALLOW_EXEC:  # e.g. Freestyle style-module scripts
+        raise BridgeError(f"refused without allow_exec: {attr!r} points at a Python text")
+    for coll_name in dir(bpy.data):
+        coll = getattr(bpy.data, coll_name, None)
+        if isinstance(coll, bpy.types.bpy_prop_collection):
+            block = coll.get(value)
+            if isinstance(block, cls):
+                return block
+    raise BridgeError(f"no {prop.fixed_type.identifier} named {value!r} for {attr!r}")
+
+
 def get_property(collection, name, path):
     block = _resolve_datablock(collection, name)
     try:
@@ -362,6 +381,8 @@ def set_property(collection, name, path, value):
         raise BridgeError(f"cannot resolve {owner_path!r} on {collection}[{name!r}]: {exc}") from exc
     if not hasattr(owner, attr):
         raise BridgeError(f"{type(owner).__name__} has no property {attr!r}")
+    if isinstance(value, str):
+        value = _id_by_name(owner, attr, value)
     setattr(owner, attr, value)
     return {"value": _json_value(getattr(owner, attr))}
 

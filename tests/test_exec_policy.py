@@ -1,5 +1,7 @@
 """Without allow_exec, no tool may run agent-controlled Python inside Blender."""
 
+import sys
+
 import pytest
 
 from blender_agent import BlenderSession, RemoteError
@@ -241,5 +243,21 @@ def test_preview_generation_cannot_run_embedded_scripts(session, tmp_path):
         params = {"directory": f"{tmp_path}/", "files": [{"name": blend.name}]}
         with pytest.raises(RemoteError, match="use_trusted=True"):
             session.call_operator(idname, {**params, "use_trusted": True})
-        session.call_operator(idname, params)  # forced to use_trusted=False
+        try:
+            session.call_operator(idname, params)  # forced to use_trusted=False
+        except RemoteError as exc:
+            # The child Blender renders object previews, which fails on hosted macOS/Windows
+            # runners without a GPU; what matters is that the planted script did not run.
+            assert "Previews generation process failed" in exc.message and sys.platform != "linux"
     assert not marker.exists()
+
+
+def test_python_texts_cannot_be_linked_by_name(session, exec_session):
+    session.call_operator("text.new")
+    session.call_operator("scene.freestyle_module_add")
+    with pytest.raises(RemoteError, match="points at a Python text"):
+        session.set_property("scenes", "Scene", "view_layers[0].freestyle_settings.modules[0].script", "Text")
+    exec_session.call_operator("text.new")
+    exec_session.call_operator("scene.freestyle_module_add")
+    value = exec_session.set_property("scenes", "Scene", "view_layers[0].freestyle_settings.modules[0].script", "Text")
+    assert value == {"id_type": "Text", "name": "Text"}
