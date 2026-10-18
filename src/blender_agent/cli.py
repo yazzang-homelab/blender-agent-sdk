@@ -56,6 +56,10 @@ def _add_session_options(p):
     p.add_argument("--allow-exec", action="store_true",
                    help="allow exec_python and script operators (trusted agents only)")
     p.add_argument("--file", help=".blend file to start from")
+    p.add_argument("--render-engine", choices=["BLENDER_WORKBENCH", "BLENDER_EEVEE", "CYCLES"],
+                   help="engine for screenshots (default: $BLENDER_AGENT_RENDER_ENGINE or Workbench; "
+                        "CYCLES on machines without a GPU). MCP hosts usually do not pass your environment on, "
+                        "so set it here")
     p.add_argument("--out", help="gallery folder for screenshots")
     p.add_argument("--http", type=int, metavar="PORT",
                    help="also serve the gallery over HTTP on PORT (0 = any free port)")
@@ -65,8 +69,9 @@ def _add_session_options(p):
 
 def _studio(args, default_out):
     gallery = Gallery(args.out or default_out, title=getattr(args, "name", None) or "blender-agent")
+    env = {"BLENDER_AGENT_RENDER_ENGINE": args.render_engine} if args.render_engine else None
     studio = Studio(gallery, blender=args.blender, background=not args.gui, allow_exec=args.allow_exec,
-                    blend_file=args.file)
+                    blend_file=args.file, env=env)
     url = None
     if args.http is not None:
         try:
@@ -227,9 +232,9 @@ def cmd_start(args):
     log_path = state_dir / "daemon.log"
     log_path.write_bytes(b"")
     argv = [sys.executable, "-m", "blender_agent", "_daemon", "--name", args.name]
-    for flag in ("blender", "file", "out", "http"):
+    for flag in ("blender", "file", "out", "http", "render_engine"):
         if getattr(args, flag) is not None:
-            argv += [f"--{flag}", str(getattr(args, flag))]
+            argv += [f"--{flag.replace('_', '-')}", str(getattr(args, flag))]
     argv += ["--http-bind", args.http_bind] + ["--gui"] * args.gui + ["--allow-exec"] * args.allow_exec
     service = _outside_caller_cgroup(argv, args.name, log_path)
     kwargs = {"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP} \

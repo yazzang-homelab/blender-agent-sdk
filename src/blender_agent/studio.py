@@ -106,11 +106,11 @@ class Gallery:
 class Studio:
     """One Blender session kept alive across tool calls, restarted after it is lost."""
 
-    def __init__(self, gallery, *, blender=None, background=True, allow_exec=False, blend_file=None,
+    def __init__(self, gallery, *, blender=None, background=True, allow_exec=False, blend_file=None, env=None,
                  session_factory=BlenderSession):
         self.gallery = gallery
         self.options = {"blender": blender, "background": background, "allow_exec": allow_exec,
-                        "blend_file": blend_file}
+                        "blend_file": blend_file, "env": env}
         self._factory = session_factory
         self._session = None
         self.restarts = 0

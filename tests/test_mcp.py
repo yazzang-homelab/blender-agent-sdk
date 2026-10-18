@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import json
+import os
 import sys
 
 from mcp import ClientSession, StdioServerParameters, stdio_client
@@ -23,8 +24,11 @@ def test_official_client_drives_a_persistent_session(blender_bin, tmp_path):
     out = tmp_path / "gallery"
 
     async def scenario():
+        # Like real MCP hosts, the client passes only a minimal environment to the server.
+        engine = os.environ.get("BLENDER_AGENT_RENDER_ENGINE")
         params = StdioServerParameters(command=sys.executable,
-                                       args=["-m", "blender_agent", "mcp", "--blender", blender_bin, "--out", str(out)])
+                                       args=["-m", "blender_agent", "mcp", "--blender", blender_bin, "--out", str(out),
+                                             *(["--render-engine", engine] if engine else [])])
         async with stdio_client(params) as (read, write):
             async with ClientSession(read, write) as client:
                 await client.initialize()

@@ -62,6 +62,8 @@ gjc mcp add blender --command blender-agent --arg mcp --arg --http --arg 8765   
 
 Besides the SDK tools the server offers `show` (render, save to the gallery, return the image),
 `gallery` (where the user can look) and `reset_scene`.
+MCP hosts start servers with a minimal environment, so pass settings as options rather than
+environment variables: `--blender PATH`, `--render-engine CYCLES` (no GPU), `--gui`, `--allow-exec`.
 
 **Background session + CLI**, for agents without MCP or for typing commands yourself:
 
