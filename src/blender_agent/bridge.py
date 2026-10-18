@@ -1,12 +1,14 @@
 """In-Blender side of blender-agent. Started by the client as
 
     blender [-b] [--disable-autoexec] [FILE.blend] [--factory-startup] [EXTRA_ARGS...] \
-        --python-exit-code 1 --python bridge.py -- --socket PATH --workdir DIR [--allow-exec]
+        --python-exit-code 1 --python bridge.py -- --connect ADDRESS --workdir DIR [--allow-exec]
 
 ``DIR`` is owned by the client, which removes it after Blender exits; checkpoints
 and screenshots are written there.
 
-It connects to the client's Unix socket and serves framed JSON-RPC requests.
+It connects to the client at ``ADDRESS`` (a Unix socket path, or ``tcp:127.0.0.1:PORT`` on
+Windows, whose Python has no AF_UNIX), introduces itself with the token from
+``BLENDER_AGENT_TOKEN`` and then serves framed JSON-RPC requests.
 Every bpy access happens on Blender's main thread:
 
 * background (``-b``): this script blocks the main thread in a serve loop;
@@ -39,11 +41,11 @@ class BridgeError(Exception):
 
 def _parse_args(argv):
     args = argv[argv.index("--") + 1:] if "--" in argv else []
-    socket_path, workdir, allow_exec = None, None, False
+    address, workdir, allow_exec = None, None, False
     i = 0
     while i < len(args):
-        if args[i] == "--socket":
-            socket_path = args[i + 1]
+        if args[i] == "--connect":
+            address = args[i + 1]
             i += 2
         elif args[i] == "--workdir":
             workdir = args[i + 1]
@@ -53,14 +55,15 @@ def _parse_args(argv):
             i += 1
         else:
             raise SystemExit(f"blender-agent bridge: unknown argument {args[i]!r}")
-    if not socket_path or not workdir:
-        raise SystemExit("blender-agent bridge: --socket PATH and --workdir DIR are required")
+    if not address or not workdir:
+        raise SystemExit("blender-agent bridge: --connect ADDRESS and --workdir DIR are required")
     if not os.path.isdir(workdir):
         raise SystemExit(f"blender-agent bridge: --workdir {workdir!r} is not a directory")
-    return socket_path, workdir, allow_exec
+    return address, workdir, allow_exec
 
 
-SOCKET_PATH, WORKDIR, ALLOW_EXEC = _parse_args(sys.argv)
+ADDRESS, WORKDIR, ALLOW_EXEC = _parse_args(sys.argv)
+TOKEN = os.environ.pop("BLENDER_AGENT_TOKEN", "")  # proves to the client that this is its Blender
 BACKGROUND = bpy.app.background
 _checkpoints = {}  # checkpoint id -> .blend path inside WORKDIR
 
@@ -639,9 +642,14 @@ def _serve_one(sock, request, rejected):
 
 
 def _connect():
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    sock.connect(SOCKET_PATH)
-    wire.send_frame(sock, {"hello": "blender-agent", "pid": os.getpid(), **ping()})
+    if ADDRESS.startswith("tcp:"):
+        host, port = ADDRESS[len("tcp:"):].rsplit(":", 1)
+        sock = socket.create_connection((host, int(port)))
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+    else:
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.connect(ADDRESS)
+    wire.send_frame(sock, {"hello": "blender-agent", "token": TOKEN, "pid": os.getpid(), **ping()})
     return sock
 
 

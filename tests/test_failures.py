@@ -1,5 +1,6 @@
 import os
 import signal
+import socket
 import tempfile
 import time
 
@@ -16,14 +17,12 @@ def _started_with_checkpoint(blender_bin, **kwargs):
 
 def test_hang_times_out_kills_blender_and_cleans_up(blender_bin):
     bl, tmpdir = _started_with_checkpoint(blender_bin, allow_exec=True, timeout=60)
-    pid = bl.info["pid"]
     started = time.monotonic()
     with pytest.raises(SessionLost, match="timed out"):
         bl.exec_python("import time; time.sleep(60)", timeout=2)
     assert time.monotonic() - started < 15
     assert not bl.alive
-    with pytest.raises(OSError):
-        os.kill(pid, 0)  # the process is gone
+    assert bl.returncode is not None  # the process is gone
     assert not os.path.exists(tmpdir)
     with pytest.raises(SessionLost):
         bl.ping()
@@ -41,7 +40,7 @@ def test_crash_inside_blender_raises_session_lost_with_exit_code(blender_bin):
 
 def test_external_kill_raises_session_lost(blender_bin):
     bl, tmpdir = _started_with_checkpoint(blender_bin)
-    os.kill(bl.info["pid"], signal.SIGKILL)
+    os.kill(bl.info["pid"], getattr(signal, "SIGKILL", signal.SIGTERM))  # TerminateProcess on Windows
     time.sleep(0.5)
     with pytest.raises(SessionLost):
         bl.ping()
@@ -112,3 +111,46 @@ def test_malformed_frames_from_a_raw_peer_get_errors_not_a_crash(session):
     wire.send_frame(sock, [1, 2, 3])
     assert wire.recv_frame(sock)["error"]["type"] == "BadRequest"
     assert session.ping()["pong"] is True
+
+
+def _tcp_transport(monkeypatch):
+    """Use the Windows transport (loopback TCP + token) on any platform."""
+    monkeypatch.delattr("blender_agent.client.socket.AF_UNIX", raising=False)
+
+
+def test_tcp_transport_serves_requests(blender_bin, monkeypatch):
+    _tcp_transport(monkeypatch)
+    with BlenderSession(blender_bin) as bl:
+        assert bl._sock.family == socket.AF_INET
+        assert "token" not in bl.info
+        bl.call_operator("mesh.primitive_cube_add")
+        assert "Cube" in {o["name"] for o in bl.scene_graph()["objects"]}
+
+
+def test_peers_without_the_token_are_dropped(blender_bin, monkeypatch):
+    """Any local process can reach a loopback port; only the hello with our token is accepted."""
+    from blender_agent import protocol as wire
+
+    _tcp_transport(monkeypatch)
+    impostors = []
+    real_listen = BlenderSession._listen
+
+    def listen_with_impostors(self):
+        listener, address = real_listen(self)
+        port = int(address.rsplit(":", 1)[1])
+        for hello in ({"hello": "blender-agent", "token": "guess", "pid": 1}, b"junk"):
+            peer = socket.create_connection(("127.0.0.1", port))
+            if isinstance(hello, dict):
+                wire.send_frame(peer, hello)
+            else:
+                peer.sendall(len(hello).to_bytes(4, "big") + hello)
+            impostors.append(peer)
+        return listener, address
+
+    monkeypatch.setattr(BlenderSession, "_listen", listen_with_impostors)
+    with BlenderSession(blender_bin) as bl:
+        assert bl.info["pid"] != 1
+        assert bl.ping()["pong"] is True
+    for peer in impostors:
+        assert peer.recv(1) == b""  # closed by the client
+        peer.close()

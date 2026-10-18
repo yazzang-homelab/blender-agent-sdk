@@ -4,20 +4,33 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
 
 jobs:
   test:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            asset: blender-5.2.2-linux-x64.tar.xz
+            sha256: 84098912789dc450e95697c4184fb8a90acbe5111c2ba4aede3fecb57806a168
+          - os: windows-2022
+            asset: blender-5.2.2-windows-x64.zip
+            sha256: 3849d17a682cba006075aaa3f3597ecb5c9c30ec31035b2e092c53e40679b535
+          - os: macos-14
+            asset: blender-5.2.2-macos-arm64.dmg
+            sha256: dc4125399b8bfefe283cc1624d6cfc7809d1cac20ace51072127eb371f31f210
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
     env:
-      BLENDER_VERSION: "5.2.2"
-      BLENDER_SERIES: "5.2"
-      # Hosted runners have no GPU: pin screenshots to Cycles on the CPU.
+      # Official checksums: https://download.blender.org/release/Blender5.2/blender-5.2.2.sha256
+      BLENDER_URL: https://download.blender.org/release/Blender5.2/${{ matrix.asset }}
+      # Hosted runners have no usable GPU: pin screenshots to Cycles on the CPU.
       BLENDER_AGENT_RENDER_ENGINE: CYCLES
-      # Official checksum: https://download.blender.org/release/Blender5.2/blender-5.2.2.sha256
-      BLENDER_SHA256: "84098912789dc450e95697c4184fb8a90acbe5111c2ba4aede3fecb57806a168"
-      # The GUI test must run here, never skip.
-      BLENDER_AGENT_REQUIRE_GUI: "1"
     steps:
       - uses: actions/checkout@v4
 
@@ -26,6 +39,7 @@ jobs:
           python-version: "3.12"
 
       - name: System libraries for Blender
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -37,22 +51,41 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/blender
-          key: blender-${{ env.BLENDER_VERSION }}-linux-x64-${{ env.BLENDER_SHA256 }}
+          key: blender-${{ matrix.asset }}-${{ matrix.sha256 }}
 
       - name: Download Blender
         if: steps.cache-blender.outputs.cache-hit != 'true'
         run: |
-          tarball="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
-          curl -sfLo "$RUNNER_TEMP/$tarball" "https://download.blender.org/release/Blender${BLENDER_SERIES}/$tarball"
-          echo "${BLENDER_SHA256}  $RUNNER_TEMP/$tarball" | sha256sum -c -
+          archive="$RUNNER_TEMP/${{ matrix.asset }}"
+          curl -sfLo "$archive" "$BLENDER_URL"
+          python -c "import hashlib,sys; d=hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest(); sys.exit(d != sys.argv[2] and f'sha256 mismatch: {d}')" "$archive" "${{ matrix.sha256 }}"
           mkdir -p ~/blender
-          tar -xJf "$RUNNER_TEMP/$tarball" -C ~/blender --strip-components=1
+          case "${{ runner.os }}" in
+            Linux)   tar -xJf "$archive" -C ~/blender --strip-components=1 ;;
+            Windows) 7z x -bd -o"$RUNNER_TEMP/b" "$archive" > /dev/null && mv "$RUNNER_TEMP"/b/blender-*/* ~/blender/ ;;
+            macOS)   hdiutil attach "$archive" -nobrowse -readonly -mountpoint "$RUNNER_TEMP/dmg"
+                     cp -R "$RUNNER_TEMP/dmg/Blender.app" ~/blender/
+                     hdiutil detach "$RUNNER_TEMP/dmg" ;;
+          esac
+
+      - name: Locate Blender
+        run: |
+          case "${{ runner.os }}" in
+            Linux)   echo "BLENDER=$HOME/blender/blender" >> "$GITHUB_ENV" ;;
+            Windows) echo "BLENDER=$(cygpath -w "$HOME/blender/blender.exe")" >> "$GITHUB_ENV" ;;
+            macOS)   echo "BLENDER=$HOME/blender/Blender.app/Contents/MacOS/Blender" >> "$GITHUB_ENV" ;;
+          esac
 
       - name: Install package
         run: pip install -e ".[test]"
 
-      - name: Tests (background + GUI under Xvfb)
+      - name: Tests (background; GUI under Xvfb on Linux)
         run: |
-          export BLENDER=~/blender/blender
           "$BLENDER" --version | head -1
-          xvfb-run -a -s "-screen 0 1280x1024x24" pytest -v
+          if [ "${{ runner.os }}" = Linux ]; then
+            # The GUI test must run here, never skip.
+            BLENDER_AGENT_REQUIRE_GUI=1 xvfb-run -a -s "-screen 0 1280x1024x24" pytest -v
+          else
+            # No display server for an OpenGL Blender window on these runners: the GUI test skips.
+            pytest -v
+          fi

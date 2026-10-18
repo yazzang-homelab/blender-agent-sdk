@@ -1,10 +1,14 @@
 """Python client that owns a Blender process and talks to its bridge."""
 
 import base64
+import hmac
 import os
+import re
+import secrets
 import shutil
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 import warnings
@@ -44,9 +48,26 @@ class RemoteError(BlenderAgentError):
         self.remote_traceback = remote_traceback
 
 
+def _installed_blenders():
+    """Default install locations of the official macOS and Windows builds, newest first."""
+    if sys.platform == "darwin":
+        return [str(p) for p in (Path("/Applications/Blender.app/Contents/MacOS/Blender"),
+                                 Path.home() / "Applications/Blender.app/Contents/MacOS/Blender") if p.is_file()]
+    if os.name == "nt":
+        root = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Blender Foundation"
+        found = [p for p in root.glob("Blender*/blender.exe") if p.is_file()]
+        return [str(p) for p in sorted(found, key=lambda p: _version_key(p.parent.name), reverse=True)]
+    return []
+
+
+def _version_key(name):
+    return tuple(int(n) for n in re.findall(r"\d+", name))
+
+
 def find_blender(explicit=None):
-    """Resolve the Blender binary from an argument, $BLENDER, or PATH."""
-    candidate = explicit or os.environ.get("BLENDER") or shutil.which("blender")
+    """Resolve the Blender binary from an argument, $BLENDER, PATH, or the default install location."""
+    candidate = (explicit or os.environ.get("BLENDER") or shutil.which("blender")
+                 or next(iter(_installed_blenders()), None))
     if not candidate:
         raise BlenderNotFound("set BLENDER=/path/to/blender, pass blender=..., or put blender on PATH")
     path = shutil.which(candidate) or candidate
@@ -89,19 +110,17 @@ class BlenderSession:
     def start(self):
         if self._tmpdir is not None:
             raise BlenderAgentError("session already started")
-        # Everything the session creates lives in this 0700 directory (mkdtemp's mode):
-        # the socket, Blender's log, and the bridge's checkpoints and screenshots.
-        # _kill() removes it on every exit path, including startup failures.
+        # Everything the session creates lives in this private directory (mkdtemp: 0700 on
+        # POSIX, the user's own %TEMP% on Windows): the socket, Blender's log, and the
+        # bridge's checkpoints and screenshots. _kill() removes it on every exit path,
+        # including startup failures.
         self._tmpdir = tempfile.mkdtemp(prefix="blender-agent-")
         listener = None
         try:
-            socket_path = os.path.join(self._tmpdir, "bridge.sock")
             workdir = os.path.join(self._tmpdir, "work")
             os.mkdir(workdir)
-            listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            listener.bind(socket_path)
-            listener.listen(1)
-            listener.settimeout(0.5)
+            listener, address = self._listen()
+            token = secrets.token_hex(32)
 
             cmd = [self.blender]
             if self.background:
@@ -113,7 +132,7 @@ class BlenderSession:
             if self.factory_startup:
                 cmd.append("--factory-startup")
             cmd += [*self.extra_args, "--python-exit-code", "1", "--python", str(BRIDGE_SCRIPT),
-                    "--", "--socket", socket_path, "--workdir", workdir]
+                    "--", "--connect", address, "--workdir", workdir]
             if self.allow_exec:
                 cmd.append("--allow-exec")
 
@@ -121,15 +140,11 @@ class BlenderSession:
             # so a chatty render can never block the process.
             self.log_path = self._log_path_arg or os.path.join(self._tmpdir, "blender.log")
             self._log = open(self.log_path, "wb")
-            env = {**os.environ, **(self.env or {})}
+            # The token travels in the environment, which other users cannot read (unlike argv).
+            env = {**os.environ, **(self.env or {}), "BLENDER_AGENT_TOKEN": token}
             self._proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=self._log,
                                           stderr=subprocess.STDOUT, env=env)
-            self._sock = self._accept(listener)
-            self._sock.settimeout(self.startup_timeout)
-            try:
-                self.info = wire.recv_frame(self._sock)
-            except (OSError, wire.ProtocolError) as exc:
-                raise self._lost(f"bridge did not say hello: {exc}") from exc
+            self._sock, self.info = self._accept(listener, token)
         except BaseException:
             self._kill()
             raise
@@ -144,16 +159,41 @@ class BlenderSession:
         self._kill()
         return SessionLost(f"{message}\n--- Blender log (tail) ---\n{tail}" if tail else message)
 
-    def _accept(self, listener):
+    def _listen(self):
+        """Listening socket plus the address the bridge connects to."""
+        if hasattr(socket, "AF_UNIX"):
+            path = os.path.join(self._tmpdir, "bridge.sock")
+            listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            listener.bind(path)
+            address = path
+        else:  # Windows: CPython has no AF_UNIX there; loopback TCP, authenticated by the token
+            listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            listener.bind(("127.0.0.1", 0))
+            address = f"tcp:127.0.0.1:{listener.getsockname()[1]}"
+        listener.listen(4)
+        listener.settimeout(0.5)
+        return listener, address
+
+    def _accept(self, listener, token):
+        """The connection that says hello with our token; any other peer is dropped."""
         deadline = time.monotonic() + self.startup_timeout
         while time.monotonic() < deadline:
             if self._proc.poll() is not None:
                 raise self._lost(f"Blender exited with code {self._proc.returncode} during startup")
             try:
                 conn, _ = listener.accept()
-                return conn
             except socket.timeout:
                 continue
+            conn.settimeout(max(deadline - time.monotonic(), 0.5))
+            try:
+                hello = wire.recv_frame(conn)
+            except (OSError, wire.ProtocolError):
+                hello = None
+            if isinstance(hello, dict) and hmac.compare_digest(str(hello.pop("token", "")), token):
+                if conn.family != getattr(socket, "AF_UNIX", None):
+                    conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                return conn, hello
+            conn.close()
         raise self._lost(f"Blender did not connect within {self.startup_timeout}s")
 
     def close(self):
